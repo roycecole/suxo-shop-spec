@@ -1,0 +1,89 @@
+# 17 - Order Service
+
+## 異動紀錄
+| 版本 | 日期 | 作者 | 說明 |
+|---|---|---|---|
+| v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)、[09-api-specification.md](09-api-specification.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+
+## 1. 職責
+
+訂單、子訂單、狀態機，並擔任**結帳流程的 Saga 協調者**——這是全平台唯一的跨服務交易協調點。
+
+## 2. 資料模型
+
+| 實體 | 說明 |
+|---|---|
+| Order | BuyerId（訪客可為 null，改用訪客識別）、Status、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
+| SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount |
+| OrderItem | ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
+
+## 3. 爸芭樂案例
+
+買家同時購買珍珠芭樂+帝王芭樂時，結帳建立一張 Order，若平台為單一賣家自營則只會產生一張 SubOrder。
+
+## 4. 結帳 Saga（本平台唯一的跨服務交易協調流程）
+
+爸芭樂買家結帳需跨 Cart、WMS、Promotions、Order、Payment、Notification 六個服務，由 Order Service 擔任 Saga 協調者：
+
+```mermaid
+sequenceDiagram
+    participant Buyer as 買家（前台）
+    participant Order as Order Service<br/>(Saga 協調者)
+    participant Cart as Cart Service
+    participant WMS as WMS Service
+    participant Promo as Promotions Service
+    participant Pay as Payment Service
+    participant Noti as Notification Service
+
+    Buyer->>Order: POST /api/v1/orders/checkout
+    Order->>Cart: 取得購物車內容
+    Cart-->>Order: 商品/數量清單
+    Order->>WMS: 原子扣庫存（reservations）
+    alt 庫存不足
+        WMS-->>Order: 失敗
+        Order-->>Buyer: 結帳失敗，不繼續
+    else 扣庫存成功
+        WMS-->>Order: 已預留
+        Order->>Promo: 驗證並套用優惠券
+        alt 優惠券失敗
+            Promo-->>Order: 失敗
+            Order->>WMS: 補償：釋放預留庫存
+            Order-->>Buyer: 結帳失敗
+        else 優惠券成功
+            Promo-->>Order: 折扣金額
+            Order->>Order: 本地交易建立 Order/SubOrder（Pending）
+            Order->>Pay: 建立付款紀錄與導轉表單
+            Pay-->>Order: actionUrl + fields
+            Order-->>Buyer: 導轉金流付款頁
+            Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+        end
+    end
+```
+
+1. 呼叫 Cart Service 取得購物車內容
+2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗）
+3. 呼叫 Promotions Service 驗證並套用優惠券
+4. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易）
+5. 呼叫 Payment Service 建立付款紀錄
+6. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
+7. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
+
+通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列——單一客戶部署流量規模不大，非同步事件驅動換不到對應的複雜度代價。
+
+## 5. API 大綱
+
+| Method & Path | 說明 | 認證 |
+|---|---|---|
+| `POST /api/v1/orders/checkout` | 建立訂單（Saga 協調者入口） | 公開（含訪客） |
+| `GET /api/v1/orders/{id}` | 查詢訂單詳情 | 需登入（本人） |
+| `POST /api/v1/orders/lookup` | 訪客查單（訂單編號 + Email） | 公開，需速率限制 |
+| `GET /api/v1/vendor/orders` | 賣家查看自己商店的訂單 | 賣家 |
+| `POST /api/v1/vendor/orders/{id}/ship` | 賣家標記出貨 | 賣家 |
+| `GET /internal/v1/orders/support/{id}/trace` | 供 `PlatformSupportStaff` 查看某筆訂單完整 Saga 執行軌跡（哪一步失敗、補償是否成功），用於排查卡單問題 | 內部 + PlatformSupportStaff |
+
+版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
+
+## 6. 待決議事項
+- [ ] Saga 補償失敗時（例如還原庫存本身也失敗）的最終處理與告警機制——這是全新的失敗模式，需要對應設計
+- [ ] Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計（見 [10-gap-analysis.md](10-gap-analysis.md)）
+- [ ] 逾時未付款自動取消、訂單編號產生策略需另訂
