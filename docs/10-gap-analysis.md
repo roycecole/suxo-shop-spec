@@ -109,8 +109,9 @@
 | ~~Markdown 渲染/清理邏輯是否共用~~ | **已解決**：統一為共用函式庫 `RenderMarkdownToSafeHtml`，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §2 |
 | ~~圖表方案只解決了一部分~~ | **已解決**：[22-service-analytics.md](22-service-analytics.md) §4 補上 Chart.js（`react-chartjs-2`）作為熱銷商品排行/付款方式分布的方案，與 Lightweight Charts 職責互補 |
 | ~~i18n × SSG 的建置成本未重新估算~~ | **已解決**：執行期主機規格不受語言數量影響，Next.js 建置步驟改移到 CI/CD 執行，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.3 |
+| ~~`SuxoShop.Shared.Translation` 套件的採用狀態未定案~~ | **已解決**（使用者 2026-09-09 要求「決定去留」）：定案不採用，`ecommerce-services` 的 Catalog/CMS/Promotions/Shipping 四服務維持各自獨立實作，套件降級為參考範本；同時定案 zh-Hant 不落在 `Translation` 表裡，見 [28-i18n.md](28-i18n.md) §3、§3.1 v0.6 |
 
-**建議**：本節四項已在本輪全數處理完畢。
+**建議**：前四項已在當輪全數處理完畢；第五項（套件去留）於後續一輪（2026-09-09，使用者明確要求）補上決議。
 
 ## 8. 資安面（因應「資訊安全性非常重要」正式收斂）
 
