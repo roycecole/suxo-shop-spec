@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應 [10-gap-analysis.md](10-gap-analysis.md) §1、§7 累積的多項缺口：跨服務共通慣例未定義、Markdown 處理管線各服務各自實作、資訊安全性需要正式收斂 |
 | v0.2 | 2026-09-08 | ordinarycas | §3 補充「各服務文件 API 大綱的讀法」統一約定，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的內部端點認證註記不一致疑慮——以本節為準，不需逐服務重複載明兩層防禦 |
 | v0.3 | 2026-09-09 | ordinarycas | 新增 §4.1：共用套件（`SuxoShop.Shared.*`）的資安修補強制升級窗口（7 個日曆天＋`[SECURITY]` Release Notes 標示＋人工追蹤清單，與一般版本更新的自由升級節奏區分），解決 [10-gap-analysis.md](10-gap-analysis.md) §9 已列的例外機制缺口 |
+| v0.4 | 2026-09-10 | ordinarycas | §5 解決 4 項待決議：高權限帳號 2FA 定案 TOTP、結構化 log 集中收集定案 Grafana Loki、CSP 規則逐服務盤點完成、服務身分 JWT 定案不需要快取（純本機簽章運算），回應「將待決議事項列出來實作」需求 |
 
 > 本文件是 15 個微服務**都必須遵守**的共通規則，不是某一個服務的規格。凡是本文件定義過的慣例，各服務文件（[11](11-service-identity.md)–[25](25-service-gateway.md)）不重複定義，只在需要偏離慣例時特別註明。
 
@@ -95,7 +96,17 @@ string RenderMarkdownToSafeHtml(string markdown)
 - **升級被阻擋時不能沉默逾期**：若某服務因修補版本含破壞性變更（Breaking Change）無法在 7 天內完成正式升級，須在同一個窗口內採取暫時緩解措施（如額外輸入驗證、暫時停用受影響功能），並在下一個發布週期內完成真正的套件升級，緩解措施與完成時程同樣記錄在追蹤清單，不能只升級不記錄或只記錄不升級。
 
 ## 5. 待決議事項
-- [ ] 高權限帳號（SuperAdmin、PlatformSupportStaff）是否強制 2FA，及採用哪種方式（TOTP/簡訊）
-- [ ] 結構化 log 的集中收集方案（Serilog + Seq/ELK 等）選型，屬於既有維運面缺口的延伸
-- [ ] Content-Security-Policy 的實際規則內容（哪些外部網域允許載入資源，如金流商的付款頁 iframe）需要逐服務盤點後才能定案，不可用過於寬鬆的預設值
-- [ ] 服務身分 JWT（§3）的簽發頻率與快取策略，避免每次內部呼叫都重新簽發造成效能負擔
+- [x] ~~高權限帳號（SuperAdmin、PlatformSupportStaff）是否強制 2FA，及採用哪種方式~~——**已解決：強制，採 TOTP**（非簡訊）。理由：TOTP（如 Google Authenticator/Authy）不需要簡訊閘道商合約與費用（呼應 [23-service-notification.md](23-service-notification.md) §7 簡訊現階段不做的同一個理由）、不依賴電信商送達率、離線也能產生驗證碼，是業界對高權限帳號的標準做法；這兩個角色能碰到所有客戶或所有訂單資料，權限範圍最大，值得要求這一步驟的登入摩擦。實作上是 Identity Service（ShyeCMS 這邊）/[11-service-identity.md](11-service-identity.md)（電商平台這邊）的登入流程各自加驗證步驟，非本文件範圍，這裡只定政策
+- [x] ~~結構化 log 的集中收集方案（Serilog + Seq/ELK 等）選型~~——**已解決：Grafana Loki + Promtail**（非 ELK/Seq）。理由：ELK（Elasticsearch+Logstash+Kibana）對單一 VPS、單一客戶部署的規模是過重的方案（Elasticsearch 本身就需要可觀的記憶體）；Seq 是不錯的 .NET 生態選擇但屬於商業授權（免費層有使用限制）；Loki 專為「日誌量不大、想要輕量方案」的場景設計（索引只做標籤不做全文，儲存成本遠低於 Elasticsearch），且與本平台已經是 Docker Compose 單機部署的形態高度契合（Loki + Promtail + Grafana 三個容器即可，Grafana 還能同時拿來看其他監控指標，一魚兩吃）。各服務只需要維持既有的結構化 JSON log 輸出到 stdout（[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.3 既有規範不變），Promtail 負責從 Docker log driver 收集，不需要改各服務程式碼
+- [x] ~~Content-Security-Policy 的實際規則內容...需要逐服務盤點後才能定案~~——**已解決（盤點完成）**：
+  
+  | 對象 | 需要放行的外部來源 | 用途 |
+  |---|---|---|
+  | `ecommerce-storefront`（買家前台） | `form-action`：金流商網域（ECPay `payment.ecpay.com.tw`、藍新 `ccore.newebpay.com` 等，依實際簽約廠商而定） | 結帳導轉金流頁是**表單 POST 導頁**，不是 iframe 嵌入（見 [18-service-payment.md](18-service-payment.md)），所以是 `form-action` 而非 `frame-src`/`child-src` |
+  | `ecommerce-storefront`／`ecommerce-admin` | `img-src`：Media Service 的實際儲存後端網域（依 [19-service-media.md](19-service-media.md) §2 選型而定，本機儲存則是同源，物件儲存則需放行對應網域） | 商品圖片等媒體檔案顯示 |
+  | `ecommerce-storefront`／`ecommerce-admin` | `connect-src`：僅同源（前端一律呼叫自己 repo 的 API 代理層 `/api/*`，再由後端轉發到 Gateway，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5，瀏覽器端不直接打 Gateway 網域） | 前端 fetch 呼叫範圍 |
+  | `shyecms-admin` | `connect-src`：`shyecms-api` 的實際網域（依部署環境而定，開發環境見其 CORS 設定） | 前端呼叫後端 API |
+  | 全部前端（`ecommerce-storefront`/`ecommerce-admin`/`shyecms-admin`） | `script-src`/`style-src`：`'self'`，**不允許** `unsafe-inline`（除非個別頁面有無法避免的內嵌 script，如 PWA 防閃爍腳本，屆時改用 nonce） | 一般 XSS 防護基準 |
+  
+  未列出的服務（純 API 後端，不直接回應瀏覽器渲染的頁面）不需要 CSP——CSP 是瀏覽器渲染 HTML 時才有意義的標頭，API 回應 JSON 不受此規範約束
+- [x] ~~服務身分 JWT（§3）的簽發頻率與快取策略，避免每次內部呼叫都重新簽發造成效能負擔~~——**已解決：不需要快取，維持每次呼叫即時簽發**。理由：`ecommerce-services` 目前的實作（`ServiceTokenIssuer`/`UserTokenIssuer`）本身就是**純本機的 HMAC-SHA256 簽章運算**，不涉及任何網路往返（不像呼叫外部 OAuth 授權伺服器那種真的需要快取來省網路成本的情境），簽發一個 JWT 的運算成本是微秒等級，遠低於接下來要進行的實際 HTTP 呼叫本身——快取反而會增加程式碼複雜度（需要處理快取失效、Token 尚未過期但已被撤銷等情境）換取一個並不存在的效能問題。服務 JWT 效期已定案 **5 分鐘**（`ServiceJwtOptions.ExpirationMinutes` 預設值，短效降低外洩風險），這個頻率本身已經是合理的簽發密度，不需要額外的快取層

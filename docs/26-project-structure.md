@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-09 | ordinarycas | §3.3 `ecommerce-admin/features/` 補上 promotions/shipping/reviews 三個資料夾，同步 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) v0.5 已新增的三個賣家後台功能（實作 repo 已依 08 建了 10 個 features 資料夾，本文件範本至此對齊） |
 | v0.6 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名；§2.2 `shyecms-admin/features/` 補上 `staff/` 模組並確認先前的猜測樹狀圖、§7 標記 ShyeCMS 前端需求規格待決議項已解決——皆同步新增的 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) |
 | v0.7 | 2026-09-09 | ordinarycas | §7 標記 `services/*/Dockerfile` 待決議項已解決：`ecommerce-services` 已統一撰寫同構的 multi-stage Dockerfile 並通過全服務 docker compose 啟動實測，回應「將待決議事項列出來實作」需求 |
+| v0.8 | 2026-09-10 | ordinarycas | §7 解決 3 項待決議：私有套件選型定案 GitHub Packages、跨 repo CI/CD SOP 與 `ecommerce-launch` 版本標籤更新流程定案（各 repo 版本 tag 觸發建置推送映像檔，`ecommerce-launch` 現階段人工更新不自動化），回應「將待決議事項列出來實作」需求 |
 
 > 本文件回答「總共會有哪些 repo、各自資料夾長什麼樣子」。
 
@@ -232,7 +233,8 @@ services:
 
 ## 7. 待決議事項
 - [x] ~~ShyeCMS 的前端需求規格尚未撰寫~~——**已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，比照 [07](07-storefront-requirements.md)/[08](08-vendor-admin-requirements.md) 的規格深度，§2.2 的 `features/*` 樹狀圖已同步更新
-- [ ] 私有 NuGet feed 與私有 npm registry 的實際服務選型（如 Azure Artifacts、GitHub Packages、自架 Verdaccio/BaGet）尚未決定
-- [ ] 6 個 repo 各自的 CI/CD 都尚未定案，且現在比 v0.2 的「2 個 repo 各自 CI/CD」更分散，需要一份跨 repo 的版本發布 SOP（哪個 repo 發新版後，`ecommerce-launch` 何時、由誰更新映像檔標籤）
-- [ ] `ecommerce-launch` 的版本標籤更新是人工修改 YAML 後 commit，還是要做成自動化（如各 repo CI 發版後自動開 PR 更新 `ecommerce-launch`）
+- [x] ~~私有 NuGet feed 與私有 npm registry 的實際服務選型~~——**已解決：GitHub Packages**。理由：6 個 repo 本來就託管在 GitHub，GitHub Packages 同時支援 NuGet 與 npm 兩種套件格式，不需要額外自架/付費服務（自架 Verdaccio/BaGet 需要自己維運一台伺服器，對目前規模是不必要的營運負擔，呼應本規格庫其餘「不自架非必要基礎設施」的一貫立場，如 CI 建置機器同樣選代管方案）；私有套件的存取權限沿用 GitHub 既有的組織/repo 權限模型，不需要另外管理一套帳號系統。
+- [x] ~~6 個 repo 各自的 CI/CD 都尚未定案...需要一份跨 repo 的版本發布 SOP~~——**已解決**，與下一項「`ecommerce-launch` 版本標籤更新流程」是同一套 SOP 的兩面，一併定案：
+  1. **各 repo 自己的 CI**：`shyecms-api`/`shyecms-admin`/`ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin`（5 個有原始碼的 repo）各自用 GitHub Actions：push 到 `main` 時跑 build + test；推送符合語意化版本的 git tag（如 `v1.2.0`）時，額外建置 Docker image 並推送到上方定案的 GitHub Packages（Container Registry），標籤對應該 git tag。
+  2. **`ecommerce-launch`（含各客戶的 `ecommerce-launch-<客戶代稱>`）版本標籤更新：現階段人工，不做自動化 PR bot**。理由：自動化需要一支有權限對所有部署 repo 開 PR 的服務帳號/GitHub App，還要設計「什麼時候該幫哪個客戶升級」的規則（不是每個客戶都要立刻用最新版——正式環境的穩定性通常比追新版更重要），這套自動化本身的複雜度和目前只有少數客戶部署的規模不成比例。維運人員決定要幫某客戶升級某服務時，手動修改該客戶 `ecommerce-launch-<客戶代稱>` 的 `.env` 或 compose 檔裡的 image tag、commit、部署——這個手動步驟本身就是一個天然的「人工確認要不要升級」關卡，比自動化更適合現階段的低頻率/高謹慎需求。待客戶數成長到人工更新變成真正的瓶頸時，再重新評估自動化。
 - [x] ~~`services/*/Dockerfile` 的實際內容（multi-stage build、基礎映像檔版本）尚未撰寫~~——**已解決**：`ecommerce-services` 的 15 個服務已統一撰寫同構的 multi-stage Dockerfile（build stage `mcr.microsoft.com/dotnet/sdk:10.0`、runtime stage `mcr.microsoft.com/dotnet/aspnet:10.0`，僅服務名/埠號不同），build context 一律 repo 根目錄（因 `shared/` 以 ProjectReference 引用，見 §4.2），已全部通過 `docker build` 與 `docker compose up` 全服務啟動實測（`/health/live`+`/health/ready` 全數 200）

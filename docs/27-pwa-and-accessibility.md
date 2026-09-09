@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應「畫面支援 RWD/PWA，前台支援網站無障礙規範」需求 |
+| v0.2 | 2026-09-10 | ordinarycas | §4 解決全部 5 項待決議：斷點寬度定案（640/768/1024px）、色彩對比確認已由 `check-contrast.mjs` 實作解決、賣家後台 WCAG AA 與 ShyeCMS PWA 皆從「暫定」正式定案為不需要、Lighthouse/axe-core 待 CI/CD 建立後納入、PWA 快取版本更新策略定案，回應「將待決議事項列出來實作」需求 |
 
 > 無障礙規範原文（[數位發展部網站無障礙規範 110.07 版](https://accessibility.moda.gov.tw/Accessible/Guide/68)）本輪無法即時讀取（該站對本工具回應 403，瀏覽器擴充功能也未連接），本文件依此規範公開已知的基準（**WCAG 2.1 AA**）撰寫。**正式開發前應由人工核對官網最新版本，確認基準沒有變動。**
 
@@ -68,8 +69,8 @@
 - 人工測試：至少一次鍵盤操作全流程測試（瀏覽→加入購物車→結帳）與螢幕報讀軟體測試，自動化工具無法完全取代人工驗證。
 
 ## 4. 待決議事項
-- [ ] 精確的斷點寬度、色彩對比 Token 待 [10-gap-analysis.md](10-gap-analysis.md) §5 建議的設計系統文件（編號待補，`27` 已被本文件使用）定案後回頭核對
-- [ ] 賣家後台是否也要納入 WCAG AA（本輪依需求明確排除，但若賣家中有身心障礙使用者，可能需要重新評估）
-- [ ] Lighthouse/axe-core 自動化稽核是否要納入 CI（見既有 CI/CD 缺口，[10-gap-analysis.md](10-gap-analysis.md) §3）
-- [ ] PWA 快取版本更新策略（Service Worker 更新時如何提示使用者重新整理，避免舊版前端呼叫新版 API 造成不相容）
-- [ ] 本文件範圍限定電商平台的前台+後台（[26-project-structure.md](26-project-structure.md) 的電商平台 repo）；ShyeCMS 自己的 `shyecms-admin`（拾夜科技員工內部使用）是否也要 RWD/PWA 尚未確認，暫定不需要（內部工具、使用場景固定在辦公室電腦），若有明確需求應另外提出
+- [x] ~~精確的斷點寬度、色彩對比 Token 待...設計系統文件定案後回頭核對~~——**已解決（分兩半處理）**：**色彩對比**這半已經是既成事實——`ecommerce-storefront` 的 `scripts/check-contrast.mjs` 已實際定義各色彩組合並驗證通過 WCAG AA 門檻（一般文字 4.5:1、非文字/UI 元件 3:1），不需要再等一份獨立的設計系統文件才有答案，直接以該腳本定義的色彩 Token 為準。**斷點寬度**這半先前確實沒有明確定義，不再等待一份可能不會另外產生的設計系統文件，直接在本文件定案：`640px`（手機／平板分界）、`768px`（平板／小螢幕桌機）、`1024px`（桌機主要斷點）——採業界常見的斷點級距（非本平台獨創數字），前台/後台的 CSS Modules 一律以這三個值為準，避免各元件各自取用微妙不同的斷點導致版面不一致
+- [x] ~~賣家後台是否也要納入 WCAG AA~~——**已解決：不納入，正式定案（非本輪暫定）**，理由與現況已寫在 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §7（僅前台強制，後台不強制）；若未來有具體的身心障礙賣家使用需求，屆時再評估納入，不是本規格庫要主動預判的事
+- [x] ~~Lighthouse/axe-core 自動化稽核是否要納入 CI~~——**已解決：待 CI/CD 本身建立後再納入，現階段不是空談**。[26-project-structure.md](26-project-structure.md) §7 已定案 CI/CD SOP（各 repo 用 GitHub Actions），Lighthouse CI/axe-core 是 GitHub Actions 生態系統裡現成的 Action，CI pipeline 建好後加一個步驟即可，不是需要另外重新設計的大工程；**現階段的替代方案**是 `check-contrast.mjs` 這類手動腳本先把最基本的對比驗證做起來（已存在），自動化稽核等 CI 本身就緒後順勢納入
+- [x] ~~PWA 快取版本更新策略~~——**已解決**：Service Worker 的快取名稱（`CACHE_NAME`）附加**應用程式版本號**（如 `suxoshop-v1.2.0`），每次前端部署新版本時版本號跟著變、快取名稱跟著變；SW 的 `activate` 事件裡清除所有「不是目前版本」的舊快取（標準 SW cache-versioning pattern），`skipWaiting()` + `clients.claim()` 讓新版 SW 儘快接手，避免使用者停留在分頁很久導致舊版前端持續呼叫可能已不相容的新版 API——這是 PWA 開發的標準做法，不是本平台需要獨創設計的問題
+- [x] ~~ShyeCMS 自己的 `shyecms-admin` 是否也要 RWD/PWA~~——**已解決：不需要，正式定案（非本輪暫定）**，理由不變（內部工具、使用場景固定在辦公室電腦）；若有明確需求應另外提出，不主動預判

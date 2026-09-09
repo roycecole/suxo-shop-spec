@@ -17,23 +17,21 @@
 | v0.12 | 2026-09-10 | ordinarycas | 處理 §2 ShyeCMS 剩餘 7 項：3 項可技術/流程判斷已解決（`PastDue` SOP、開通部署現階段人工、`Suspended` 訊息文案），4 項屬合約/商業模式判斷（濫用舉證、GMV 計費相關 2 項、終止合作資料政策），不強行代為決定，改為標記「需要業主決策」並補上具體待答子問題，讓開放狀態本身更可執行；統計訂正為 54 項未解決 + 28 項已解決 |
 | v0.13 | 2026-09-10 | ordinarycas | 修正 v0.11 遺漏——Catalog 商品搜尋效能已當輪解決但忘記移出對應列，本輪補上移除；處理 §3/§4 剩餘項目共 19 列：17 項可技術/設計判斷已解決（部分為「設計已補齊、實際串接/實作仍待沙箱環境或未來排入」的誠實記錄，非完全落地——WMS 3 項、Vendor 多賣家管理員角色、Order 逾時付款、Payment 退款/對帳設計、Media 影片縮圖設計/CDN、CMS Page Builder、Shipping 溫控物流、Analytics 查詢效能/匯出設計、Notification 3 項），Payment 沙箱實測與 Shipping 超商門市選擇標記「需要外部資源」維持開放，LINE/Google OAuth 標記「需要業主決策」並去重（§4 Identity 列併入 §3 對應列，純粹合併非解決）；改用腳本逐行核對，統計訂正為 34 項未解決 + 45 項已解決（已解決數為累計手動追蹤，逐項列名核對而非心算，避免重蹈 v0.5 的計數錯誤） |
 | v0.14 | 2026-09-10 | ordinarycas | §3 收尾：解決 9 項（DB 連線安全性、Supabase 連線數改走 pooler、CI/CD 建置機器、訪客結帳簡訊防詐、PlatformSupportStaff 診斷端點盤點——順手在 Promotions/Notification 補上原本遺漏的診斷端點、即時通知、會員資訊遮罩、Grouped 商品 WooCommerce 語意——過程中發現並訂正 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 一處實際的分隔符號錯誤、匯出連結時效）；統計說明改為明確點出剩餘項目裡多少是「需要業主決策/外部資源」而非規格能單方面解決；統計訂正為 25 項未解決 + 54 項已解決 |
+| v0.15 | 2026-09-10 | ordinarycas | §5 跨服務/基礎設施本輪**全數解決並清空**（16 項：私有套件選型、CI/CD SOP、斷點/對比 Token、賣家後台 WCAG AA、Lighthouse CI、PWA 快取、ShyeCMS PWA、i18n 4 項、2FA、log 集中收集、CSP 盤點、服務 JWT 快取）；過程中比對 [10-gap-analysis.md](10-gap-analysis.md) 發現該文件多處嚴重過時（如聲稱 `docker-compose.yml` 骨架未撰寫，實際上早已是本輪一路在用的真實可跑版本），已一併完整重新核對該文件 §1–§4/§6/§8/§9/§14 共 23 項並同步；追加解決原本卡在 §1 第 1 名的「單一 VPS 備份/災難復原策略」——重新評估後發現先前歸類為「需要業主決策」過於保守，實際有明確技術方案（見 [06](06-ecommerce-platform-architecture.md) §6.5），§1 因此從前 2 名再縮減為**前 1 名**；統計訂正為 9 項未解決 + 70 項已解決，且明確標註這 9 項全部卡在業主決策/外部資源/刻意留白，沒有一項是規格工作本身還做得動的 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**25 項未解決** + 54 項已解決（未解決數逐行核對 §2–§5 表格列數所得，非估算；已解決數為累計手動追蹤，逐項列名核對而非心算，已解決項目不列入本表）。剩餘項目裡，§2 4 項、§3 2 項（LINE/Google OAuth、服務資源消耗）、§4 2 項，皆標記「需要業主決策」或「需要外部資源/實測」，非技術判斷可單方面解決——換句話說，**剩餘 25 項裡有 8 項本來就不是規格文件能單方面關閉的**，真正還「有機會」透過規格/設計工作解決的是 §5 跨服務/基礎設施剩餘的 16 項。本輪（§3 收尾）解決 9 項：DB 連線安全性/Supabase 連線數（已查證官方資訊改走 pooler）/CI/CD 建置機器 3 項、訪客結帳簡訊防詐定案分層處理不強制、PlatformSupportStaff 診斷端點盤點完成（順手在 Promotions/Notification 補上 2 個發現的遺漏端點並各自新增支撐用的 log 實體）、即時通知定案不需要、會員資訊遮罩顯示定案、Grouped 商品 WooCommerce 語意核對時**發現並訂正一處實際錯誤**（分隔符號逗號應為 `|`，原假設有誤）、匯出連結時效定案 30 分鐘。近期解決（前一輪 17 項）：Catalog/vendor-admin 稅務欄位、WMS 3 項、Vendor 多賣家管理員角色延後、Order 逾時付款、Payment 退款/對帳設計、Media 2 項、CMS Page Builder、Shipping 溫控物流、Analytics 2 項、Notification 3 項。更早解決的完整清單見上方異動紀錄 v0.1–v0.13。
+統計：**9 項未解決** + 70 項已解決（未解決數逐行核對 §2–§5 表格列數所得，非估算；已解決數為累計手動追蹤，逐項列名核對而非心算，已解決項目不列入本表）。**§5 跨服務/基礎設施本輪全數解決，剩餘 9 項全部集中在 §2–§4**：§2 ShyeCMS 4 項、§3 2 項、§4 2 項皆標記「需要業主決策」或「需要外部資源」，§4 剩下的 Order 訂單編號 1 項是刻意維持開放（現況已有文件記載的暫定方案，只是還沒正式升級為永久設計，非被卡住）——換句話說，**這 9 項沒有一項是規格/設計工作本身還做得動的**，全部卡在業主決策、外部資源，或本來就刻意留白。本輪（§5 收尾）解決 16 項：私有套件選型（GitHub Packages）、CI/CD SOP 與 `ecommerce-launch` 版本標籤流程、斷點寬度/色彩對比 Token、賣家後台 WCAG AA、Lighthouse/axe-core、PWA 快取策略、ShyeCMS PWA、i18n 4 項（翻譯提供方式、SEO 優先度、LINE 多語系、繁中強制填寫）、2FA（TOTP）、log 集中收集（Grafana Loki）、CSP 規則盤點、服務 JWT 快取策略。過程中同步發現並訂正 [10-gap-analysis.md](10-gap-analysis.md) 多處與實際規格/程式碼脫節的舊記錄（該文件 v0.20 有完整說明），一併定案了原本標記在 §1 前 1 名的備份/災難復原策略（[06](06-ecommerce-platform-architecture.md) §6.5）——先前把它歸類為「需要業主決策」是判斷過於保守，實際上有明確的技術方案可以解決，見 §1 上方說明。近期解決（前一輪 9 項）：DB 連線安全性/Supabase 連線數/CI/CD 建置機器、訪客結帳簡訊防詐、PlatformSupportStaff 診斷端點盤點、即時通知、會員資訊遮罩、Grouped 商品 WooCommerce 語意（發現並訂正分隔符號錯誤）、匯出連結時效。
 
-## 1. 前 4 項建議優先處理（依風險/急迫性排序，非文件順序）
+## 1. 前 1 項建議優先處理（依風險/急迫性排序，非文件順序）
 
-> 2026-09-09 本輪解決了原本前 10 名中的前 5 項（ShyeCMS 前端規格、共用套件資安修補傳播、Saga 補償失敗處理、圖表函式庫選型、英日文海外客群範圍，見上方統計說明）。同日第九輪複查新發現一項帳號安全缺口，一度補進第 1 名，隨即在使用者確認解法後解決，移出本表。2026-09-10 原第 3 名「`StoreSettings` 歸屬」也已解決並移出，下表縮減為前 4 名——若需要完整的前 10 名，建議下一輪對 §2–§5 剩餘項目重新評估風險排序，而非由本次調整順手代勞。
+> 這份清單原本有 10 名，逐輪解決後陸續縮減。2026-09-10 最後兩輪：原第 1 名「單一 VPS 備份/災難復原策略」其實**可以**由技術方案解決（排程備份容器＋異地存放＋還原演練，非業主決策獨佔的問題，先前判斷過於保守），已定案見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5，移出本表；原第 2 名「六個 repo 的 CI/CD SOP」與原第 4 名「高權限帳號 2FA」也已定案解決。下表只剩 1 項，且是**規格文件真的無法單方面解決**的項目（需要金流商核發的測試環境憑證，不存在「重新想一個技術方案」這條路）。
 
 | # | 項目 | 為什麼優先 | 來源 |
 |---|---|---|---|
-| 1 | 單一 VPS 的備份/災難復原策略空白 | 架構決策把風險集中到一台主機，上線前必須有答案，不是能無限期擱置的項目 | [06](06-ecommerce-platform-architecture.md) §10 |
-| 2 | 六個 repo 的 CI/CD 與跨 repo 版本協調 SOP | repo 拆分後最直接的維運後果，沒有這個 SOP，`ecommerce-launch` 的版本標籤永遠只能手動猜 | [26](26-project-structure.md) §7 |
-| 3 | 三家金流廠商的沙箱實測 | 上線前必做，且是規格無法解決的項目（需要廠商測試環境憑證） | [18](18-service-payment.md) §8 |
-| 4 | 高權限帳號（SuperAdmin/PlatformSupportStaff）2FA | 這兩個角色能碰到所有客戶或所有訂單資料，權限範圍最大但目前驗證強度未提升 | [29](29-shared-service-conventions.md) §5 |
+| 1 | 三家金流廠商的沙箱實測，**需要外部資源**（廠商測試環境憑證） | 上線前必做，且是規格無法解決的項目——本表現在唯一的殘留項 | [18](18-service-payment.md) §8 |
 
 ## 2. ShyeCMS（[00](00-overview.md)–[05](05-scope-and-open-items.md)）
 
@@ -61,24 +59,7 @@
 
 ## 5. 跨服務/基礎設施（[26](26-project-structure.md)–[29](29-shared-service-conventions.md)）
 
-| 項目 | 來源 |
-|---|---|
-| 私有 NuGet feed 與 npm registry 服務選型未定 | [26](26-project-structure.md) §7 |
-| 六個 repo 的 CI/CD 與跨 repo 版本協調 SOP 未定 | [26](26-project-structure.md) §7 |
-| `ecommerce-launch` 版本標籤更新流程（人工 vs 自動化）未定 | [26](26-project-structure.md) §7 |
-| 精確斷點寬度、色彩對比 Token 待設計系統文件定案 | [27](27-pwa-and-accessibility.md) §4 |
-| 賣家後台是否也要納入 WCAG AA | [27](27-pwa-and-accessibility.md) §4 |
-| Lighthouse/axe-core 自動化稽核是否納入 CI | [27](27-pwa-and-accessibility.md) §4 |
-| PWA 快取版本更新策略未定 | [27](27-pwa-and-accessibility.md) §4 |
-| ShyeCMS 自己的前端是否也要 RWD/PWA（暫定不需要） | [27](27-pwa-and-accessibility.md) §4 |
-| 翻譯內容由誰提供（人工 vs 機器翻譯） | [28-i18n.md](28-i18n.md) §8 |
-| 日文/英文版 SEO 優先度是否與繁中相同 | [28-i18n.md](28-i18n.md) §8 |
-| LINE 通知訊息是否需要多語系 | [28-i18n.md](28-i18n.md) §8 |
-| 賣家後台是否強制至少填寫繁中版本 | [28-i18n.md](28-i18n.md) §8 |
-| 高權限帳號是否強制 2FA | [29](29-shared-service-conventions.md) §5 |
-| 結構化 log 集中收集方案選型 | [29](29-shared-service-conventions.md) §5 |
-| CSP 詳細規則需逐服務盤點 | [29](29-shared-service-conventions.md) §5 |
-| 服務身分 JWT 的簽發頻率與快取策略 | [29](29-shared-service-conventions.md) §5 |
+**2026-09-10 本節原本 16 項已全數解決**（私有套件選型、CI/CD SOP、斷點/對比 Token、賣家後台 WCAG AA、Lighthouse CI、PWA 快取策略、ShyeCMS PWA、i18n 4 項、2FA、log 集中收集、CSP 盤點、服務 JWT 快取），詳見 [26-project-structure.md](26-project-structure.md) §7、[27-pwa-and-accessibility.md](27-pwa-and-accessibility.md) §4、[28-i18n.md](28-i18n.md) §8、[29-shared-service-conventions.md](29-shared-service-conventions.md) §5 各自的異動紀錄，本表無殘留項目。
 
 ## 6. 重複出現超過一次的項目（值得合併決策，而非分開處理）
 

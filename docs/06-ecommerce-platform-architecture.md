@@ -21,6 +21,7 @@
 | v0.16 | 2026-09-09 | ordinarycas | §6.1、§9 repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名（見 [26-project-structure.md](26-project-structure.md)） |
 | v0.17 | 2026-09-09 | ordinarycas | §7 Saga 循序圖補上「Payment 建立失敗」分支（已核對 `ecommerce-services` 實作行為：`OrderStatus.Failed`、補償順序優惠券→庫存），解決 [30-open-decisions-register.md](30-open-decisions-register.md) 待決議項，回應「將待決議事項列出來實作」需求 |
 | v0.18 | 2026-09-10 | ordinarycas | §10 解決 3 項待決議（DB 連線安全性規劃、Supabase 連線數上限定案改走 pooler、CI/CD 建置機器採代管 runner），1 項（服務資源消耗）標記為需要實測維持開放，回應「將待決議事項列出來實作」需求 |
+| v0.19 | 2026-09-10 | ordinarycas | 新增 §6.5：單一 VPS 部署（Docker 內建 Postgres 模式）的備份/災難復原策略定案（排程備份容器每日 pg_dump、異地存放、30 天保留、上線前還原演練），解決 [10-gap-analysis.md](10-gap-analysis.md) 已列多輪的「備份/災難復原策略空白」缺口，回應「將待決議事項列出來實作」需求；RTO/RPO 明確標示為估計值，正式 SLA 承諾留給業主的合約決策 |
 
 ## 0. 定位聲明
 
@@ -214,7 +215,17 @@ DB 連線方式**不寫死**，透過環境變數（`ConnectionStrings__Postgres
 - **定案：共用同一個 Postgres instance（多 schema），非各服務獨立 instance**——`ecommerce-services` 的 `docker-compose.yml` 已這樣實作並經 docker compose 全服務啟動實測（15 服務 + Gateway 共用同一個 `suxoshop` database、各自獨立 schema，`/health/ready` 全數通過）。待流量或資源需求成長後，仍可視情況把個別服務拆成獨立 instance（各服務本來就已用獨立 schema、無跨服務直接查表，拆分時只需改連線字串，不需要動 Migration 或應用層程式碼）——這件事本身不是本輪要提前決定的，但「初期共用一個 instance」不再是開放問題。
 - 庫存扣減採**原子條件更新**做法（`UPDATE ... WHERE StockQuantity >= N`），避免併發買超，詳見 [13-service-wms.md](13-service-wms.md)。
 
-## 7. 結帳流程（Saga）
+### 6.5 單機部署的備份與災難復原（回應 [10-gap-analysis.md](10-gap-analysis.md) 已列的空白）
+
+單一 VPS 部署把風險集中到一台主機（見 §6.1），這件事本身在架構上已是定案，但備份/還原**只在「Docker 內建 Postgres」這個連線模式下才是本文件的責任**——外部 DB 模式（Supabase 或客戶自建代管）的備份/高可用性由該資料庫供應商負責，見 §6.2 已有的說明，本節只補「Docker 內建 Postgres」這個模式原本完全空白的部分：
+
+- **備份機制**：加一個獨立的排程備份容器（如 `prodrigestivill/postgres-backup-local`，一個廣泛使用、專門為「Docker Compose 內的 Postgres 排程備份」設計的現成映像檔，不需要自己刻 cron script），對 `docker-compose.yml` 裡的 `postgres` 服務執行每日 `pg_dump`——因為 15 個服務共用同一個 `suxoshop` database（見 §6.4 定案），一份 `pg_dump` 就涵蓋全部服務的 schema，不需要對每個服務分開備份。
+- **異地存放**：備份檔**不能只留在同一台 VPS 上**——VPS 本身故障或遭入侵時，本機備份會跟主資料庫一起遺失，違背備份的本意。若客戶的 Media Service（見 [19-service-media.md](19-service-media.md)）已選用 S3 相容的物件儲存，備份檔同步到同一個儲存服務的另一個 bucket/前綴即可，不需要為了備份另外引入一套儲存服務；若 Media 走本機儲存，則需要額外決定一個異地目的地（如 Backblaze B2 之類的低成本物件儲存），這是唯一還留給實際部署時依客戶預算決定的細節。
+- **保留期限**：預設 **30 天**，可依客戶合約調整——這是合理的技術預設值，不是本文件武斷鎖死的數字。
+- **還原演練**：客戶上線前**至少執行一次實際還原測試**（在測試環境把某天的備份還原回一個乾淨的 Postgres，確認資料完整可用）並寫成文件化的還原 SOP——從沒被實際還原驗證過的備份，不能被信任為「有效的備份」，這是備份設計裡最容易被跳過但也最重要的一步。
+- **RTO/RPO 是估計值，不是合約承諾**：以每日備份的頻率推算，RPO（可容忍的資料遺失量）約 24 小時；RTO（復原所需時間）粗估數小時等級（人工介入：準備新主機或容器、還原備份、重新指向網域）。**這兩個數字本身若要成為對客戶的正式 SLA 承諾，是拾夜科技的業務/合約決策，不是這份技術規格能單方面代為承諾的**——本節只負責把「怎麼做到」的技術方案定案，多快、多可靠是合約層級的另一件事。
+
+若備份頻率/RTO 真的要更緊（如金流交易密集到 24 小時的資料遺失無法接受），需要更即時的機制（如 PostgreSQL 的 WAL 歸檔/時間點復原），屬於超出目前規模的進階需求，本節不預先設計。
 
 爸芭樂買家結帳（如同時購買珍珠芭樂+帝王芭樂）需跨 Cart、WMS、Promotions、Order、Payment、Notification 六個服務，由 **Order Service 擔任 Saga 協調者**：
 

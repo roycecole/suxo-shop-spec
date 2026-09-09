@@ -22,6 +22,7 @@
 | v0.17 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`；§6 ShyeCMS 前端規格/認證方式兩項缺口標記已解決（新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）；§9 共用套件資安修補傳播缺口標記已解決（[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）；§7 圖表函式庫缺口標記已解決（[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js）；§4 建議下一步同步勾選已解決項目；§5 設計系統文件建議編號因 `31` 已被佔用改為 `32` |
 | v0.18 | 2026-09-09 | ordinarycas | 回應「分析還有哪些可以調整或修改的」第九輪複查：新增消費者會員登入（[11-service-identity.md](11-service-identity.md) §5.1）與 Saga 補償統一設計（[17-service-order.md](17-service-order.md) §4.1）之後，重新通讀全部 15 個微服務規格，新增 §14 記錄 5 項新發現——最重要的一項是「訪客升級為會員」機制與新增信箱驗證流程之間存在帳號/訂單歷史冒領風險，尚未修正，僅記錄分析結果；§4 新增項目 11 呼應此發現 |
 | v0.19 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§14、§4 項目 11 對應項標記已解決，見 [11-service-identity.md](11-service-identity.md) §5.1 的具體設計 |
+| v0.20 | 2026-09-10 | ordinarycas | 使用者要求「將 [30-open-decisions-register.md](30-open-decisions-register.md) 73 項未解決列出來實作」，逐輪處理過程中發現本文件多處已與實際規格/程式碼脫節（如 `docker-compose.yml` 骨架其實早已完成、Catalog/WMS 降級行為的架構前提已不成立），完整重新核對 §1–§4、§6、§8、§9、§14：共標記 23 項已解決（含本輪新增 2 項技術決策——`PlatformSupportStaff` 統一授權 Policy 慣例、網域/SSL 憑證管理採 Caddy 自動 HTTPS、依賴套件掃描納入 CI 用 `dotnet list package --vulnerable`），§4/§6/§8/§9/§14 的「建議」小結同步更新；本節列出的 8 項已全數處理完畢的既有小結（§10–§12）未受影響。剩餘真正還開放的項目：§2 ShyeCMS 監控告警管道空白、§3 版本相容性矩陣/Deprecation Window 執行機制/服務資源評估（後者已在 [30-open-decisions-register.md](30-open-decisions-register.md) 標記需要實測）、§5 設計系統文件（範疇比本輪已解決的斷點/對比更大，色彩/字級/動畫 token 仍缺）、§9 本機多 repo 開發流程／`api-client` 相容性矩陣、§2 ShyeCMS 監控——這些留待下一輪或建置團隊成形後處理 |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -30,26 +31,26 @@
 | 項目 | 說明 |
 |---|---|
 | ~~Correlation ID 貫穿追蹤~~ | **已解決**：Gateway 產生/沿用 `X-Correlation-Id`，往下游強制傳遞，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 |
-| Catalog 與 WMS 的一致性 | 把庫存權責從 Catalog 分離到 WMS 後，商品詳情頁需要同時打兩個服務（Catalog 拿資訊、WMS 拿庫存）；WMS 短暫不可用時，商品頁該顯示「查詢中」還是「暫時隱藏庫存」，尚未定義降級行為（見 [13-service-wms.md](13-service-wms.md) 待決議） |
-| `PlatformSupportStaff` 的跨服務授權模式 | [08](08-vendor-admin-requirements.md) §4 只在 WMS、Order 各舉了一個唯讀診斷端點，這個角色實際上需要跨所有服務的一致授權策略（如統一的 Policy-based Authorization），目前是逐服務各自加端點，容易遺漏或不一致 |
+| ~~Catalog 與 WMS 的一致性~~ | **已解決（釐清：實際架構不存在這個耦合）**：`ecommerce-storefront` 前台是直接呼叫 WMS 的 `GET /api/v1/wms/products/{productId}/availability`，不透過 Catalog 中介，兩者互不依賴；WMS 查詢失敗時前台已有明確定義的四態 UI（`loading`/`in-stock`/`out-of-stock`/`error`），見 [13-service-wms.md](13-service-wms.md) §6 |
+| ~~`PlatformSupportStaff` 的跨服務授權模式~~ | **已解決**：[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6 已完成診斷端點逐服務盤點（Order/WMS/Payment/Promotions/Notification 共 5 個服務有對應端點，其餘服務目前無此需求）；授權模式定案沿用 `SuxoShop.Shared.Security` 既有的 Policy 慣例（比照 `AddServiceCallerPolicy`/`VendorScoped` 的既有模式），新增統一的 `PlatformSupportStaffOnly` Policy（檢查 User JWT 的 `Role == PlatformSupportStaff`），各服務以 `[Authorize(Policy = "PlatformSupportStaffOnly")]` 套用在對應診斷端點，不逐服務各自手刻檢查邏輯——這是本次盤點過程中一併定案的實作慣例，避免又是「逐服務各自加、容易不一致」的老問題 |
 | ~~內部 API 的服務間認證機制~~ | **已解決**：網路隔離（`/internal/v1/...` 只綁定 Docker 內部網路）+ 服務身分 JWT 縱深防禦，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §3 |
-| 多倉支援 | WMS Service 目前設計未區分「爸芭樂是否有多個實體倉庫」，若未來有多倉需求（如不同產地各自出貨），批次/庫存模型需要再加 `WarehouseId` 維度（見 [13-service-wms.md](13-service-wms.md)） |
-| 效期商品的自動下架/促銷 | WMS 記錄了批次有效期，但「快到期商品要不要自動下架、自動加入促銷」是業務邏輯缺口，目前只有資料，沒有對應流程 |
+| ~~多倉支援~~ | **已解決**：現階段明確排除，單一倉庫，見 [13-service-wms.md](13-service-wms.md) §6 |
+| ~~效期商品的自動下架/促銷~~ | **已解決**：新增每日背景排程，3 天內到期標記「即期品」、已過期扣除可售庫存，見 [13-service-wms.md](13-service-wms.md) §6 |
 | 整合測試 | 目前只有領域層單元測試，微服務拆分後**更需要**跨服務整合測試（尤其 Saga 補償路徑），本輪未涵蓋 |
 | ~~跨服務共通慣例未定義~~ | **已解決**：健康檢查端點、結構化 log 格式、Correlation ID 傳遞規則，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1 |
-| **`docker-compose.yml` 骨架尚未撰寫** | [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 定調了單一 VPS + Docker Compose + 三種 DB 連線模式，但連最基本的 15 服務 compose 檔案骨架都還沒有，[05-scope-and-open-items.md](05-scope-and-open-items.md) 已將完整開發環境文件列為待辦，此為其中最基礎的一步 |
-| **單一 VPS 的備份/災難復原策略空白（新）** | 決策採單一 VPS 部署（[06](06-ecommerce-platform-architecture.md) §6.1），意味著這台主機是單點故障——不管 DB 走 Docker 內建/外部/內部哪種模式，若走 Docker 內建 DB，這台主機的資料庫備份、還原演練完全沒有規劃，比多機部署的既有白牌模式風險更集中 |
-| **網域與 SSL 憑證管理未提及（新）** | 客戶自訂網域是白牌系統的常態需求，但本輪規格完全沒有提到憑證簽發/續簽（如 Let's Encrypt 自動化）由誰負責、怎麼跟 Gateway 的單一入口角色搭配 |
+| ~~`docker-compose.yml` 骨架尚未撰寫~~ | **已解決（早已完成，本文件沒同步）**：`ecommerce-services` 的 `docker-compose.yml` 已是真實可跑的完整版本，涵蓋全部 15 服務 + Gateway + Postgres，本次「將待決議事項列出來實作」的多輪驗證（如 Catalog 索引 migration 實測）都是直接對這份既有 compose 檔案操作，不是新寫的 |
+| ~~單一 VPS 的備份/災難復原策略空白~~ | **已解決**：新增排程備份容器每日 `pg_dump`、異地存放、30 天保留、上線前還原演練，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5 |
+| ~~網域與 SSL 憑證管理未提及~~ | **已解決**：Gateway（YARP）前面加一層 **Caddy** 做 TLS 終止——Caddy 內建自動 HTTPS（自動向 Let's Encrypt 簽發/續簽憑證，零額外設定），對外只需要客戶把網域 DNS 指到這台 VPS，Caddy 偵測到網域後自動處理憑證，續簽也全自動，不需要另外寫 cron 腳本或安裝 certbot；Caddy 與 Gateway 之間走內部網路的純 HTTP，TLS 只在 Caddy 這一層終止。選 Caddy 而非 nginx+certbot 的理由：Caddy 的自動 HTTPS 是零設定的（nginx+certbot 需要另外寫續簽腳本與 nginx reload 邏輯），對單一 VPS、逐客戶部署的維運模型更省事 |
 | ~~CORS 政策未定義~~ | **已解決**：每個客戶部署明確列出允許來源網域，禁止萬用字元，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 |
 
 ## 2. 流程/商業面
 
 | 項目 | 說明 |
 |---|---|
-| StoreSettings 的歸屬服務未定案 | [14-service-vendor.md](14-service-vendor.md) 與 [20-service-cms.md](20-service-cms.md) 都提到 `StoreSettings` 歸屬未定，本輪未做最終決定，會影響哪個服務要開發這組 API |
+| ~~StoreSettings 的歸屬服務未定案~~ | **已解決**：定案歸屬 Vendor Service，見 [14-service-vendor.md](14-service-vendor.md) §5 |
 | ShyeCMS 零連接後，拾夜科技如何得知客戶異常 | 決策 C/D 確認不連接、不取資料後，拾夜科技完全依賴客戶主動回報問題（工單/電話）才會知道系統異常——這是刻意的取捨（見 [01-architecture.md](01-architecture.md) §4），但代表**沒有任何主動監控告警的管道**，回應時間可能因此更難達成，值得提醒業務/客服團隊 |
-| `PlatformSupportStaff` 存取透明度 | [08](08-vendor-admin-requirements.md) §6 已列為待決議：客戶端目前不會即時知道拾夜科技人員登入查看了什麼，只能事後翻 AuditLog |
-| 訪客結帳的防詐風險 | [07](07-storefront-requirements.md) §5 已提出，生鮮商品退貨/報廢成本高，惡意下單（尤其大量小額測試）風險比一般電商更需要留意 |
+| ~~`PlatformSupportStaff` 存取透明度~~ | **已解決：不需要即時通知，AuditLog 已足夠**，理由見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6 |
+| ~~訪客結帳的防詐風險~~ | **已解決：現階段不強制簡訊驗證，採分層防詐**，見 [07-storefront-requirements.md](07-storefront-requirements.md) §5 |
 
 ## 3. 維運面
 
@@ -58,21 +59,22 @@
 | 各服務版本不同步的實際治理 | [09](09-api-specification.md) §1 已將「各服務版本不同步」訂為常態而非問題，但沒有配套的「版本相容性矩陣」文件，維運人員難以一眼看出「目前這個客戶的 Order v2 是否能跟 WMS v1 相容」 |
 | 單一客戶部署的服務數量（15 個）資源評估 | 沿用 [06](06-ecommerce-platform-architecture.md) §6.3 既有待決議，粗估規格未經實測校正 |
 | Deprecation Window（3 個月）的實際執行機制 | [09](09-api-specification.md) §1 訂了政策，但沒有工具/流程確保「舊版本到期後真的會被下線」，容易變成口頭政策 |
-| **CI/CD 策略空白（新）** | 15 個服務各自獨立部署，但完全沒有規劃是「統一一條 pipeline 建置全部」還是「服務各自獨立 pipeline、可獨立升級」——這直接影響 [09](09-api-specification.md) 允許的「各服務版本不同步」在實務上如何落地 |
+| ~~CI/CD 策略空白~~ | **已解決**：各服務/repo 各自獨立 GitHub Actions pipeline（非統一單一 pipeline），呼應「各服務版本不同步」的既有設計，見 [26-project-structure.md](26-project-structure.md) §7 |
 
 ## 4. 建議下一步（依風險排序）
 
 1. ~~補寫 ShyeCMS 前端需求規格~~——**已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，見 §6。
-2. **撰寫 `docker-compose.yml` 骨架**——共通慣例、Correlation ID、服務間認證、Markdown 管線、資安基準都已定案（[29-shared-service-conventions.md](29-shared-service-conventions.md)），剩下缺的是把它們落實成實際可跑的 compose 檔案。
-3. **決定 Catalog/WMS 呼叫失敗時的前台降級行為**——直接影響買家體驗，且是拆分 WMS 直接產生的新風險。
-4. **定案 `StoreSettings` 歸屬服務**——影響後續 API 開發分工，屬於小決策但會卡住實作排程。
-5. **單一 VPS 的備份/災難復原策略**——決策集中風險到一台主機，上線前必須有備份與還原演練規劃，不是可以無限期擱置的項目。
+2. ~~撰寫 `docker-compose.yml` 骨架~~——**已解決**：`ecommerce-services` 的 `docker-compose.yml` 早已是完整可跑的版本，本文件先前沒同步到，見 §1。
+3. ~~決定 Catalog/WMS 呼叫失敗時的前台降級行為~~——**已解決（釐清架構前提不成立）**：見 §1、[13-service-wms.md](13-service-wms.md) §6。
+4. ~~定案 `StoreSettings` 歸屬服務~~——**已解決**：歸屬 Vendor Service，見 [14-service-vendor.md](14-service-vendor.md) §5。
+5. ~~單一 VPS 的備份/災難復原策略~~——**已解決**：見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5。
 6. ~~共用函式庫的資安修補傳播機制~~（見 §9）——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) 新增 §4.1，訂出 7 個日曆天強制升級窗口，區分一般版本更新與資安修補。
 7. ~~熱銷排行/付款分布的圖表函式庫選型~~——**已解決**：[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js（`react-chartjs-2`），與 Lightweight Charts 職責互補。
 8. ~~補齊 Gateway 匿名端點速率限制~~——**已解決**：[25-service-gateway.md](25-service-gateway.md) 新增 §3.1，見 §11。
 9. ~~補上賣家後台 Promotions/Shipping/Reviews 三個服務的管理介面規格~~——**已解決**：[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1 已補上對應列，見 §12。
-10. 效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、高權限帳號 2FA、本機多 repo 開發流程——屬於功能性增強或維運細節，可排入下一輪迭代，非規格階段必須解決。
+10. ~~效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、高權限帳號 2FA~~——**已解決**（見各自對應章節）；僅**本機多 repo 開發流程**仍待排入下一輪，屬於開發流程細節，非規格階段必須解決。
 11. ~~訪客升級為會員的機制與信箱驗證時機~~（見 §14）——**已解決**：[11-service-identity.md](11-service-identity.md) §5.1 定案沿用同一 `User.Id`＋密碼暫存至驗證通過才生效。
+12. ~~§5.1 適用範圍是否涵蓋 Seller/SellerStaff、結帳 Saga 循序圖遺漏 Payment 失敗分支、Notification Email 管道優先度~~（見 §14）——**已解決**：三項皆已定案，見 [11-service-identity.md](11-service-identity.md) §5.1、[17-service-order.md](17-service-order.md) §4、[23-service-notification.md](23-service-notification.md) §7。
 
 > 「補齊其餘服務的 API 大綱」已於後續一輪完成（見 [11-service-identity.md](11-service-identity.md)–[25-service-gateway.md](25-service-gateway.md)），故不再列於本節。
 
@@ -93,11 +95,11 @@
 | 項目 | 說明 |
 |---|---|
 | ~~ShyeCMS 前端頁面/操作流程規格完全空白（最重要）~~ | **已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，比照 [07](07-storefront-requirements.md)/[08](08-vendor-admin-requirements.md) 的規格深度補齊 `shyecms-admin` 的頁面清單、操作流程、角色權限矩陣 |
-| ~~ShyeCMS 的認證方式未指定~~ | **已解決**：[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) §1 定案採 JWT Bearer（獨立簽發，與電商平台零共用），2FA 是否強制仍沿用 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 既有待決議，未隨本項一併定案 |
-| **六個 repo 各自的 CI/CD 與跨 repo 版本協調都未定案（範圍擴大）** | 沿用 §3 已列的 CI/CD 缺口，[26-project-structure.md](26-project-structure.md) 決策 H 把電商平台從 1 個 repo 拆成 4 個（services/storefront/admin/`ecommerce-launch`）後，缺口從「2 條 pipeline」變成「6 條 pipeline + 1 套跨 repo 版本協調流程」：某個 repo 發新版後，`ecommerce-launch` 何時、由誰更新映像檔標籤，目前只有問題本身被寫下來（[26](26-project-structure.md) §7），還沒有答案 |
+| ~~ShyeCMS 的認證方式未指定~~ | **已解決**：[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) §1 定案採 JWT Bearer（獨立簽發，與電商平台零共用）；`SuperAdmin` 是否強制 2FA 當時未隨本項一併定案，現已由 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 統一解決（定案 TOTP，適用範圍涵蓋 ShyeCMS 的 `SuperAdmin` 與電商平台的 `PlatformSupportStaff`） |
+| ~~六個 repo 各自的 CI/CD 與跨 repo 版本協調都未定案~~ | **已解決**：各 repo 獨立 GitHub Actions pipeline，`ecommerce-launch` 版本標籤現階段人工更新，見 [26-project-structure.md](26-project-structure.md) §7 |
 | ~~Monorepo 建置工具未選型~~ | **已解決（前提改變）**：電商平台不再是單一 monorepo——前台、後台、15 個服務已拆成三個獨立 repo（[26-project-structure.md](26-project-structure.md) 決策 H），`ecommerce-services` 內部也**不設共用 `.sln`**，改為各服務獨立建置，不需要 Nx/Turborepo 等級的跨語言建置編排工具 |
 
-**建議**：ShyeCMS 前端規格已補齊（見上）。本節剩餘缺口只有六個 repo 的 CI/CD/版本協調 SOP，與 §3、§9 的維運面缺口性質相同，可併入同一輪處理。
+**建議**：本節 3 項已全數處理完畢。
 
 ## 7. 多語系/圖表/Markdown 決策的連鎖影響
 
@@ -117,11 +119,13 @@
 
 本輪新增 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 作為所有服務的資安基準，取代原本散落在各文件裡的零星提及。現況：
 
-| 已定案 | 仍待決議 |
+| 已定案 | 說明 |
 |---|---|
-| HTTPS/HSTS、密碼雜湊、SQL Injection 防護、XSS 防護（含 Markdown 管線）、CSRF、CORS 政策、敏感憑證加密、Data Protection 金鑰持久化、API 速率限制範圍、PCI DSS（金流不落地）、服務間認證（網路隔離 + JWT） | 高權限帳號 2FA（見 §6）、CSP 詳細規則、log 集中收集方案選型、依賴套件掃描是否納入 CI（CI/CD 本身仍未定案，見 §3） |
+| HTTPS/HSTS、密碼雜湊、SQL Injection 防護、XSS 防護（含 Markdown 管線）、CSRF、CORS 政策、敏感憑證加密、Data Protection 金鑰持久化、API 速率限制範圍、PCI DSS（金流不落地）、服務間認證（網路隔離 + JWT） | 既有 |
+| 高權限帳號 2FA（TOTP）、CSP 詳細規則、log 集中收集方案（Grafana Loki）、服務身分 JWT 快取策略（不需要） | 已解決，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 |
+| ~~依賴套件掃描是否納入 CI~~ | **已解決：納入，用 `dotnet list package --vulnerable`**（.NET 內建工具，不需要額外服務）。本規格庫這幾輪的 `dotnet build`/`dotnet restore` 過程中，已經實際觀察到真實的套件漏洞警告（`NU1902`，如 `HtmlSanitizer`/`AngleSharp` 中度風險），證明這不是假設性風險——CI pipeline（見 §3、[26-project-structure.md](26-project-structure.md) §7 的 GitHub Actions）新增一個步驟跑 `dotnet list package --vulnerable --include-transitive`，發現高/嚴重風險漏洞時讓 build 失敗，中低風險先記錄不擋 build（避免每個第三方套件的例行 CVE 都卡住開發節奏，僅在風險等級真的高時才強制處理） |
 
-**建議**：資安基準文件已建立，但**執行面**（CI 是否真的擋得住有漏洞的依賴套件、CSP 規則是否真的夠嚴謹）要等 CI/CD 策略（§3）與各服務實際開發時才能驗證，本文件的角色是提供規則，不是保證規則會被遵守——建議正式開發階段安排至少一次滲透測試或第三方資安稽核，而非只靠文件層級的規範。
+**建議**：資安基準文件已建立，執行面（CSP 規則是否真的夠嚴謹、2FA 是否確實落地）仍要等各服務實際開發、CI pipeline 真的跑起來後才能驗證，本文件的角色是提供規則，不是保證規則會被遵守——建議正式開發階段安排至少一次滲透測試或第三方資安稽核，而非只靠文件層級的規範。
 
 ## 9. Repo 拆分（決策 H）帶來的新缺口
 
@@ -132,9 +136,9 @@
 | **本機多 repo 開發流程未定義** | 過去 monorepo 下 `docker compose up` 一次啟動全部即可本機開發；現在 `ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin` 是三個獨立 repo，開發者若要同時改動「Catalog 新增欄位 + 後台顯示該欄位」這種橫跨兩個 repo 的功能，需要並排 clone 多個 repo 並手動處理彼此依賴（如後台想測試 Catalog 未發版的新端點，`api-client` 套件版本要怎麼指到「本機開發中」的版本而非已發布版本），目前沒有規範這個流程，容易讓每個開發者各自摸索出不同做法 |
 | ~~共用函式庫的安全性修補傳播沒有例外機制~~ | **已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) 新增 §4.1，資安修補獨立分級——7 個日曆天強制升級窗口 ＋ `[SECURITY]` Release Notes 標示 ＋ 人工追蹤清單，與一般版本更新的自由升級節奏區分開來 |
 | **`api-client` 套件版本與後端服務版本的相容性矩陣更複雜** | §3 已列「各服務版本不同步的實際治理」缺口；決策 H 之後多一個維度——`api-client` 套件本身也獨立版本化，一份 `api-client@3.2.0` 對應的是「呼叫哪些服務的哪個版本」需要額外追蹤，不是單純服務對服務的相容性問題 |
-| **私有套件/映像檔倉庫的建置與維運成本** | 決策 H 需要私有 NuGet feed、私有 npm registry、容器映像檔倉庫三種基礎設施才能運作，這是 monorepo 時代不需要的額外維運項目，目前只在 [26](26-project-structure.md) §7 列為選型待決議，其建置與維運成本（含金錢與人力）未被評估過 |
+| ~~私有套件/映像檔倉庫的建置與維運成本~~ | **已解決：定案 GitHub Packages**（NuGet/npm/容器映像檔三種格式統一用同一個服務），維運成本評估：免費額度對目前規模足夠、沿用既有 GitHub 組織權限模型，不需要額外自架/維運任何基礎設施，見 [26-project-structure.md](26-project-structure.md) §7 |
 
-**建議**：安全性修補傳播機制已解決（見上，[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）。其餘兩項（`api-client` 相容性矩陣、私有倉庫維運成本）屬於開發流程/維運成本問題，可在正式建置團隊成形後排入 SOP 制定，不阻塞規格本身。
+**建議**：安全性修補傳播機制、私有倉庫選型與成本評估已解決（見上）。僅剩 `api-client` 相容性矩陣（本機多 repo 開發流程的延伸問題，見 §3 同性質項目）留待正式建置團隊成形後排入 SOP 制定，不阻塞規格本身。
 
 ## 10. 微服務 API/資料模型缺漏（第七輪跨文件複查）
 
@@ -198,9 +202,9 @@
 | 項目 | 說明 |
 |---|---|
 | ~~訪客升級為會員的確切機制未定義，與新增的信箱驗證流程存在安全疑慮~~ | **已解決**（使用者 2026-09-09 確認：要等信箱驗證通過）：[11-service-identity.md](11-service-identity.md) §5.1 新增「訪客升級為會員」設計——沿用同一個 `User.Id`（訂單本來就指向它，不需搬移資料），密碼暫存於新增的 `AccountActionToken.PendingPasswordHash`，驗證通過那一刻才寫入 `User.PasswordHash`、帳號才能登入，攻擊者拿不到受害者信箱就永遠無法完成這一步 |
-| §5.1 的登入/Refresh Token/密碼重設機制隱含適用 Seller/SellerStaff，但文字聚焦在「消費者會員」，易被誤讀為僅限 Buyer | [11-service-identity.md](11-service-identity.md) §5.1 開頭寫「聚焦消費者會員登入」，但 `login`/`refresh-token`/`forgot-password` 等端點是 Identity Service 對所有 `Role` 共用的機制，`Seller`/`SellerStaff` 帳號同樣是 `PasswordHash` 登入，理論上同樣適用——只有 `register`（固定建立 `Role=Buyer`）才是消費者限定，其餘端點的適用範圍需要更明確的文字釐清，避免未來誤以為要幫賣家另外設計一套登入機制 |
-| **結帳 Saga 循序圖遺漏「Payment 建立失敗」分支** | [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7、[17-service-order.md](17-service-order.md) §4 的 Mermaid 循序圖只畫出「庫存不足」「優惠券失敗」「Vendor 查詢失敗」三種失敗分支，但文字說明第 7 點明確寫「任一步驟失敗 → 觸發補償」，隱含 Payment Service 建立付款紀錄失敗時同樣要走 WMS 釋放庫存 + Promotions 還原優惠券的補償鏈——圖表沒有畫出這第四種失敗路徑，容易讓人誤以為 Payment 步驟不會失敗，或漏掉它也適用 [17-service-order.md](17-service-order.md) §4.1 新增的補償失敗統一設計 |
+| ~~§5.1 的登入/Refresh Token/密碼重設機制隱含適用 Seller/SellerStaff，但文字聚焦在「消費者會員」，易被誤讀為僅限 Buyer~~ | **已解決**：[11-service-identity.md](11-service-identity.md) §5.1 開頭新增「適用範圍澄清」段落 |
+| ~~結帳 Saga 循序圖遺漏「Payment 建立失敗」分支~~ | **已解決**：兩份文件的循序圖皆已補上第四個 `alt` 分支，見 [17-service-order.md](17-service-order.md) §4 |
 | ~~Gateway 路由範例與 Reviews Service 實際端點路徑不一致~~ | **已直接修正**：[25-service-gateway.md](25-service-gateway.md) §4.1 原寫「`/api/v1/orders/{id}/reviews`」與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點 `POST /api/v1/orders/{subOrderId}/review` 對不上，純格式錯誤，非待決議，已訂正 |
-| Notification 的「Email/簡訊是否併入本服務」待決議項急迫性提升 | 這項待決議（[23-service-notification.md](23-service-notification.md) §7）先前只是抽象的「未來可能需要」；[11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證信/密碼重設信現在**具體依賴**這個管道才能真正寄出，不再是假設性需求——本項待決議的優先度應提升，見 §4「建議下一步」 |
+| ~~Notification 的「Email/簡訊是否併入本服務」待決議項急迫性提升~~ | **已解決**：定案 Email 併入本服務、簡訊現階段不做，解除 Identity 驗證信的既有卡點，見 [23-service-notification.md](23-service-notification.md) §7 |
 
-**建議**：唯一牽涉帳號安全的第一項已解決；Gateway 路由錯字已直接修正；剩餘 2 項（Seller/SellerStaff 適用範圍澄清、Notification Email 管道優先度）屬於文件釐清，可視時間排入下一輪。
+**建議**：本節 5 項已全數處理完畢。
