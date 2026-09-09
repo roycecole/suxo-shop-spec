@@ -5,12 +5,14 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分出前台細節需求，回應「免登入下單、保留 LINE/Google 登入」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §6：RWD/PWA 與無障礙規範要求，指向 [27-pwa-and-accessibility.md](27-pwa-and-accessibility.md) |
+| v0.3 | 2026-09-08 | ordinarycas | §1 補充說明：本節「硬性需求」與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 的賣家自訂 `StoreSettings` 開關的界線，解決前一輪複查發現兩者矛盾（08 已移除對應開關，見其 v0.5） |
+| v0.4 | 2026-09-08 | ordinarycas | §3 頁面清單補上結帳頁對應 Promotions Service、商品詳情頁對應 Reviews Service，解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的漏列問題 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
 ## 1. 核心原則：免登入即可下單
 
-**買家不需要註冊/登入就能瀏覽商品、加入購物車、完成結帳下單。** 這是硬性需求，不是可選功能。
+**買家不需要註冊/登入就能瀏覽商品、加入購物車、完成結帳下單。** 這是**平台層級**的硬性需求，不是可選功能，也**不是**[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 那種賣家可在自己後台自行開關的營運選項——賣家能決定要不要開放貨到付款、要不要用優惠券模組，但不能關閉訪客結帳這個能力本身。
 
 | 情境 | 行為 |
 |---|---|
@@ -37,9 +39,9 @@
 |---|---|---|
 | 品牌形象首頁 | CMS Service | SSG |
 | 商品清單/分類頁 | Catalog Service | ISR |
-| 商品詳情頁 | Catalog Service（商品資訊）+ WMS Service（是否有現貨） | SSG（熱銷商品）/ ISR（其餘） |
+| 商品詳情頁 | Catalog Service（商品資訊）+ WMS Service（是否有現貨）+ Reviews Service（評價列表，受 `StoreSettings.ReviewsVisible` 控制） | SSG（熱銷商品）/ ISR（其餘） |
 | 購物車 | Cart Service | CSR |
-| 結帳頁 | Order Service（建立訂單）、Payment Service（導轉金流）、Shipping Service（運費試算） | CSR |
+| 結帳頁 | Order Service（建立訂單）、Payment Service（導轉金流）、Shipping Service（運費試算）、Promotions Service（套用優惠券，見 [06](06-ecommerce-platform-architecture.md) §7 Saga） | CSR |
 | 訂單查詢頁（會員） | Order Service（依登入身分查詢） | CSR |
 | 訂單查詢頁（訪客） | Order Service（訂單編號 + Email） | CSR |
 

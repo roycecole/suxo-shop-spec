@@ -4,6 +4,8 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)、[09-api-specification.md](09-api-specification.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+| v0.2 | 2026-09-08 | ordinarycas | §4 Saga 新增查詢 Vendor Service 抽成費率的步驟，解決 `SubOrder.CommissionAmount` 計算來源未定義的問題（見 [10-gap-analysis.md](10-gap-analysis.md) §11、[14-service-vendor.md](14-service-vendor.md) §4 新增的內部端點）；[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 同步更新 |
+| v0.3 | 2026-09-08 | ordinarycas | §6 Correlation ID 待決議項已過時——機制已由 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 定案，改為標記已解決並確認本服務的落實方式 |
 
 ## 1. 職責
 
@@ -14,7 +16,7 @@
 | 實體 | 說明 |
 |---|---|
 | Order | BuyerId（訪客可為 null，改用訪客識別）、Status、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
-| SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount |
+| SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount（= 該 SubOrder 小計 × 結帳當下向 Vendor Service 查得的 `CommissionRate`，見 §4） |
 | OrderItem | ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
 
 ## 3. 爸芭樂案例
@@ -32,6 +34,7 @@ sequenceDiagram
     participant Cart as Cart Service
     participant WMS as WMS Service
     participant Promo as Promotions Service
+    participant Vendor as Vendor Service
     participant Pay as Payment Service
     participant Noti as Notification Service
 
@@ -51,11 +54,20 @@ sequenceDiagram
             Order-->>Buyer: 結帳失敗
         else 優惠券成功
             Promo-->>Order: 折扣金額
-            Order->>Order: 本地交易建立 Order/SubOrder（Pending）
-            Order->>Pay: 建立付款紀錄與導轉表單
-            Pay-->>Order: actionUrl + fields
-            Order-->>Buyer: 導轉金流付款頁
-            Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+            Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
+            alt 查詢失敗
+                Vendor-->>Order: 失敗
+                Order->>Promo: 補償：還原優惠券使用次數
+                Order->>WMS: 補償：釋放預留庫存
+                Order-->>Buyer: 結帳失敗
+            else 查詢成功
+                Vendor-->>Order: CommissionRate（依賣家）
+                Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
+                Order->>Pay: 建立付款紀錄與導轉表單
+                Pay-->>Order: actionUrl + fields
+                Order-->>Buyer: 導轉金流付款頁
+                Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+            end
         end
     end
 ```
@@ -63,10 +75,11 @@ sequenceDiagram
 1. 呼叫 Cart Service 取得購物車內容
 2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗）
 3. 呼叫 Promotions Service 驗證並套用優惠券
-4. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易）
-5. 呼叫 Payment Service 建立付款紀錄
-6. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
-7. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
+4. 呼叫 Vendor Service 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`GET /internal/v1/vendor/{vendorId}/commission-rate`，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
+5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出）
+6. 呼叫 Payment Service 建立付款紀錄
+7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
+8. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
 
 通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列——單一客戶部署流量規模不大，非同步事件驅動換不到對應的複雜度代價。
 
@@ -85,5 +98,5 @@ sequenceDiagram
 
 ## 6. 待決議事項
 - [ ] Saga 補償失敗時（例如還原庫存本身也失敗）的最終處理與告警機制——這是全新的失敗模式，需要對應設計
-- [ ] Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計（見 [10-gap-analysis.md](10-gap-analysis.md)）
+- [x] ~~Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計~~——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 已定案傳遞規則（Gateway 產生/沿用 `X-Correlation-Id`，逐服務強制轉發）；`/internal/v1/orders/support/{id}/trace` 的實作需確保 Saga 每一步（呼叫 Cart/WMS/Promotions/Vendor/Payment）都帶上同一組 Correlation ID 並寫入自己的結構化 log，才能依此 ID 查出跨服務的完整執行軌跡
 - [ ] 逾時未付款自動取消、訂單編號產生策略需另訂

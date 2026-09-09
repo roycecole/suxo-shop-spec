@@ -7,6 +7,8 @@
 | v0.2 | 2026-09-08 | ordinarycas | 新增第 6 節：後台匯出 WooCommerce 商品 CSV，回應「方便廠商移轉 WooCommerce」需求，含實際 WooCommerce CSV 欄位對照與變體展開規則 |
 | v0.3 | 2026-09-08 | ordinarycas | 新增第 7 節：RWD/PWA 要求，指向 [27-pwa-and-accessibility.md](27-pwa-and-accessibility.md)（後台不強制無障礙規範，僅前台） |
 | v0.4 | 2026-09-08 | ordinarycas | §1 補充內容編輯採 Markdown 編輯器，回應「後台內容編輯使用 Markdown」需求 |
+| v0.5 | 2026-09-08 | ordinarycas | §1 補上 Promotions/Shipping/Reviews 三個服務的賣家後台管理介面需求（後端 API 已在各自服務文件補齊，見 [10-gap-analysis.md](10-gap-analysis.md) §12）；§2 移除 `StoreSettings.GuestCheckoutEnabled`——訪客結帳是 [07-storefront-requirements.md](07-storefront-requirements.md) §1 訂定的平台鎖定硬性需求，不應做成賣家可自行關閉的功能開關，此為前一輪複查發現的矛盾（見 10-gap-analysis.md §12） |
+| v0.6 | 2026-09-08 | ordinarycas | §4.3 移除角色列舉裡的「Admin」——[11-service-identity.md](11-service-identity.md) §2 目前定案的 `User.Role` 枚舉本來就沒有這個值，[05-scope-and-open-items.md](05-scope-and-open-items.md) 也明確排除本輪的平台管理員規格，此處純屬文字誤植，非保留給未來的角色 |
 
 > 針對「爸芭樂」微服務平台的賣家角色具體化，並新增拾夜科技支援權限章節（第 4 節）。不含客戶自己的「平台管理員」規格（賣家審核、全站金流物流設定、客訴仲裁）——爸芭樂案例暫定為單一賣家自營，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2。
 
@@ -19,6 +21,9 @@
 | 訂單處理（確認、出貨、標記已完成） | Order Service |
 | 銷售數據（銷售趨勢、熱銷品種排行） | Analytics Service |
 | 首頁/形象頁版型編輯 | CMS Service |
+| 優惠券管理（新增/編輯/刪除，設定折扣內容、期限、適用範圍） | **Promotions Service**（[16-service-promotions.md](16-service-promotions.md) §5） |
+| 運費規則設定（新增/編輯/刪除運費區域與物流方式） | **Shipping Service**（[21-service-shipping.md](21-service-shipping.md) §4） |
+| 評價管理（檢視商店所有評價、回覆買家評價） | **Reviews Service**（[24-service-reviews.md](24-service-reviews.md) §4） |
 
 商品描述（Catalog）與首頁形象內容（CMS 的 RichText 區塊）**皆採 Markdown 編輯器**（如 `react-md-editor` 之類，含即時預覽），不提供所見即所得的 HTML 富文字編輯器——理由是 Markdown 格式簡單、跨服務儲存/轉譯一致（見 [12-service-catalog.md](12-service-catalog.md)、[20-service-cms.md](20-service-cms.md)），也降低賣家貼入未過濾 HTML 造成 XSS 的風險面。
 
@@ -41,7 +46,8 @@
 | CouponModuleEnabled | bool | 是否開放使用優惠券 |
 | CodPaymentEnabled | bool | 是否開放貨到付款 |
 | ReviewsVisible | bool | 是否於商品頁顯示評價 |
-| GuestCheckoutEnabled | bool | 是否允許訪客結帳（預設 true，見 [07-storefront-requirements.md](07-storefront-requirements.md) §1） |
+
+> **不含訪客結帳開關**：訪客結帳是 [07-storefront-requirements.md](07-storefront-requirements.md) §1 明訂的**平台鎖定硬性需求**（「不是可選功能」），與本節其餘項目性質不同——其餘都是賣家在合約允許範圍內自行決定要不要用的營運選項，訪客結帳則是不論賣家意願都必須提供的能力，因此不應該、也不會出現在 `StoreSettings` 這種賣家可自行關閉的開關清單裡。
 
 ## 3. 賣家角色與子帳號
 
@@ -63,7 +69,7 @@
 
 | 欄位/設計 | 說明 |
 |---|---|
-| Role = `PlatformSupportStaff` | 新增於 Identity Service 的角色列舉，與 Buyer/Seller/SellerStaff/Admin 並列 |
+| Role = `PlatformSupportStaff` | 新增於 Identity Service 的角色列舉，與 Buyer/Seller/SellerStaff 並列（見 [11-service-identity.md](11-service-identity.md) §2；本輪不含「Admin」角色，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2） |
 | 帳號建立方式 | 部署當下由維運人員在該客戶環境**手動建立**，不透過 ShyeCMS 下發，也不與其他客戶環境共用帳密 |
 | 權限範圍 | 預設**唯讀**：可查看訂單狀態、系統錯誤紀錄、金流回調紀錄、庫存異動紀錄；**不可**匯出會員個資清單、不可修改商品價格或商業設定 |
 | 特殊診斷操作 | 少數需要寫入的診斷操作（如手動重試卡住的訂單狀態機）需個別列為白名單動作，且動作本身要能被追蹤（見 4.4） |

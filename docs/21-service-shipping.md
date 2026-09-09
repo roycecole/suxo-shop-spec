@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | §2 補上 `Translation` 表，落實 [28-i18n.md](28-i18n.md) §3 列出但本文件尚未實作的多語系需求 |
+| v0.3 | 2026-09-08 | ordinarycas | §4 API 大綱補齊運費區域/物流方式的查詢/編輯/刪除端點（原本只有建立），回應賣家後台運費規則管理需求（見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1、[10-gap-analysis.md](10-gap-analysis.md) §10） |
 
 ## 1. 職責
 
@@ -27,7 +28,13 @@
 | Method & Path | 說明 | 認證 |
 |---|---|---|
 | `GET /api/v1/shipping/methods` | 結帳頁查詢可用物流方式與運費 | 公開 |
-| `POST /api/v1/vendor/shipping/zones` | 賣家設定運費規則 | 賣家 |
+| `GET /api/v1/vendor/shipping/zones` | 賣家列出自己設定的運費區域與各區域下的物流方式 | 賣家 |
+| `POST /api/v1/vendor/shipping/zones` | 賣家新增運費區域 | 賣家 |
+| `PUT /api/v1/vendor/shipping/zones/{id}` | 編輯運費區域 | 賣家 |
+| `DELETE /api/v1/vendor/shipping/zones/{id}` | 刪除運費區域（含底下的物流方式） | 賣家 |
+| `POST /api/v1/vendor/shipping/zones/{zoneId}/methods` | 於指定區域新增物流方式（宅配/超商取貨）與 `RateRule` | 賣家 |
+| `PUT /api/v1/vendor/shipping/methods/{id}` | 編輯物流方式的運費規則 | 賣家 |
+| `DELETE /api/v1/vendor/shipping/methods/{id}` | 刪除物流方式 | 賣家 |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 

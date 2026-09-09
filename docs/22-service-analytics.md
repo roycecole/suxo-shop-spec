@@ -5,10 +5,11 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §4：圖表函式庫確定用 TradingView Lightweight Charts，回應「圖表使用 tradingview lightweight-charts」需求 |
+| v0.3 | 2026-09-08 | ordinarycas | §1 修正「訂閱事件」措辭——與 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §2「不引入訊息佇列」的決策矛盾，改為明確的定期輪詢/批次拉取，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的缺口 |
 
 ## 1. 職責
 
-報表/數據分析，唯讀服務。無自有寫入表，讀取其他服務的資料或訂閱事件建置投影。
+報表/數據分析，唯讀服務。無自有寫入表，定期輪詢/批次拉取其他服務的 REST API 建置投影——本平台不引入訊息佇列（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §2），本服務不例外，不走事件訂閱/pub-sub 機制。
 
 ## 2. 資料來源
 

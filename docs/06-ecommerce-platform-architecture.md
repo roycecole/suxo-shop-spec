@@ -14,6 +14,10 @@
 | v0.9 | 2026-09-08 | ordinarycas | §2 新增圖表函式庫（TradingView Lightweight Charts）與多語系（繁中/英/日）技術棧決策，詳見 [22-service-analytics.md](22-service-analytics.md)、[28-i18n.md](28-i18n.md) |
 | v0.10 | 2026-09-08 | ordinarycas | §6.3 重新評估多語系對主機規格的影響：執行期規格不受影響，僅 Next.js 建置步驟受影響，決定將建置移出正式環境 VPS、改在 CI/CD 執行 |
 | v0.11 | 2026-09-08 | ordinarycas | §6.1 更新：因應前後端拆成多個 repo（[26-project-structure.md](26-project-structure.md) 決策 H），VPS 上實際 clone 的是新增的 `ecommerce-deploy` repo，不是原始碼 repo |
+| v0.12 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第八輪複查發現 §6.1、§6.3 的「15 個服務 + Gateway」講法與 §4 服務清單（Gateway 本來就是 15 列裡的其中一列）重複計算 Gateway，統一改為「14 個領域服務 + Gateway（共 15 個服務）」，資源估算數字本身未受影響 |
+| v0.13 | 2026-09-08 | ordinarycas | §7 結帳 Saga 補上查詢 Vendor Service 抽成費率的步驟，與 [17-service-order.md](17-service-order.md) §4 v0.2 同步，解決 `SubOrder.CommissionAmount` 計算來源未定義的問題（見 [10-gap-analysis.md](10-gap-analysis.md) §11） |
+| v0.14 | 2026-09-08 | ordinarycas | §9 同步 [01-architecture.md](01-architecture.md) §3 v0.4 的具體決定：功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-deploy-<客戶代稱>` 的 `.env`，解決 [10-gap-analysis.md](10-gap-analysis.md) §13 已列的缺口 |
+| v0.15 | 2026-09-09 | ordinarycas | §2 新增「主題模式」決策列：前台+後台皆支援深色/淺色模式、**預設淺色**、不跟隨系統偏好（使用者指定）；同時記錄前台首頁多語系（繁中/英/日）已依 [28-i18n.md](28-i18n.md) §2/§4 於實作 repo 落地（型別化字典＋fallback 繁中，正式 i18n 函式庫選型仍開放） |
 
 ## 0. 定位聲明
 
@@ -34,6 +38,7 @@
 | 動畫/轉場效果 | **主要使用 CSS**（transition/keyframes/`@starting-style`），不引入 JS 動畫函式庫 | 見第 5 節 5.1，理由是不增加前台 JS bundle 大小、不阻塞 SSG 頁面的可互動時間 |
 | 賣家後台 | React（Vite SPA） | 商品上架、訂單處理、銷售數據，不需要 SEO，純 CSR 即可 |
 | RWD / PWA | 前台與後台**皆須**支援響應式設計，並做成**可安裝的 PWA**（手機/平板可加入主畫面） | 詳細規格見 [27-pwa-and-accessibility.md](27-pwa-and-accessibility.md) |
+| 主題模式 | 前台與後台皆須支援**深色/淺色模式，預設一律淺色**（不跟隨系統 `prefers-color-scheme`，使用者切換後以 localStorage 記憶），以 CSS custom properties + `html[data-theme="dark"]` 覆寫實作 | 使用者指定需求（2026-09-09）；具體 token 值仍待設計系統文件（[10-gap-analysis.md](10-gap-analysis.md) §5 既有缺口）定案 |
 | 無障礙（前台） | 前台須符合**WCAG 2.1 AA**（台灣網站無障礙規範 110.07 版基準） | 僅前台，後台暫不強制（見 [27-pwa-and-accessibility.md](27-pwa-and-accessibility.md) 待決議） |
 | 圖表函式庫 | 時間序列報表用 **TradingView Lightweight Charts** | 僅適用銷售趨勢等時間序列圖，長條/圓餅圖另評估，見 [22-service-analytics.md](22-service-analytics.md) |
 | 多語系 | 繁中（預設）+ 英文 + 日文 | 僅電商平台前台+後台，ShyeCMS 不含，見 [28-i18n.md](28-i18n.md) |
@@ -160,7 +165,7 @@ graph TB
 
 預期客戶（如爸芭樂）只會有**一台虛擬主機**，前台、賣家後台、所有微服務都跑在這一台機器上，以 Docker Compose 管理，一行指令啟動。這台主機上實際 clone 的是 `ecommerce-deploy` repo（見 [26-project-structure.md](26-project-structure.md) §3.4），裡面的 `docker-compose.yml` 引用其餘三個 repo（`ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin`）各自建置好、推上私有映像檔倉庫的版本標籤，客戶主機本身不需要 clone 任何一份原始碼。這代表：
 
-- 15 個服務（見 §4）+ Gateway + 前台 Next.js（需要 Node 執行環境，非純靜態）全部是同一台主機上的容器，**沒有跨機器的服務發現需求**（docker-compose 內建的服務名稱 DNS 即足夠，不需要 service registry/mesh）。
+- 14 個領域服務 + Gateway（見 §4，共 15 個服務）+ 前台 Next.js（需要 Node 執行環境，非純靜態）全部是同一台主機上的容器，**沒有跨機器的服務發現需求**（docker-compose 內建的服務名稱 DNS 即足夠，不需要 service registry/mesh）。
 - 資源評估明確是**同一台主機**的問題，不是「多機器如何分配」的問題——這把 [10-gap-analysis.md](10-gap-analysis.md) §3 已列的「服務數量在單一客戶部署下的資源消耗」從抽象疑慮變成具體的**主機規格問題**，需要在正式報價/建置 SOP 前給出最低建議規格（見 §6.3）。
 
 ### 6.2 資料庫三種連線模式
@@ -181,7 +186,7 @@ DB 連線方式**不寫死**，透過環境變數（`ConnectionStrings__Postgres
 
 ### 6.3 最低建議規格（初步，待實測校正）
 
-15 個 .NET 微服務 + Gateway + Next.js 前台在單一 VPS 上，記憶體需求不小（docker-compose 若用 Docker Desktop 預設資源配置，通常明顯不足）。初步建議（未經實測，僅供估算報價參考）：
+14 個 .NET 領域服務 + Gateway（共 15 個服務）+ Next.js 前台在單一 VPS 上，記憶體需求不小（docker-compose 若用 Docker Desktop 預設資源配置，通常明顯不足）。初步建議（未經實測，僅供估算報價參考）：
 
 | 項目 | 建議最低規格 |
 |---|---|
@@ -217,6 +222,7 @@ sequenceDiagram
     participant Cart as Cart Service
     participant WMS as WMS Service
     participant Promo as Promotions Service
+    participant Vendor as Vendor Service
     participant Pay as Payment Service
     participant Noti as Notification Service
 
@@ -236,11 +242,20 @@ sequenceDiagram
             Order-->>Buyer: 結帳失敗
         else 優惠券成功
             Promo-->>Order: 折扣金額
-            Order->>Order: 本地交易建立 Order/SubOrder（Pending）
-            Order->>Pay: 建立付款紀錄與導轉表單
-            Pay-->>Order: actionUrl + fields
-            Order-->>Buyer: 導轉金流付款頁
-            Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+            Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
+            alt 查詢失敗
+                Vendor-->>Order: 失敗
+                Order->>Promo: 補償：還原優惠券使用次數
+                Order->>WMS: 補償：釋放預留庫存
+                Order-->>Buyer: 結帳失敗
+            else 查詢成功
+                Vendor-->>Order: CommissionRate（依賣家）
+                Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
+                Order->>Pay: 建立付款紀錄與導轉表單
+                Pay-->>Order: actionUrl + fields
+                Order-->>Buyer: 導轉金流付款頁
+                Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+            end
         end
     end
 ```
@@ -248,10 +263,11 @@ sequenceDiagram
 1. 呼叫 Cart Service 取得購物車內容
 2. 呼叫 **WMS Service** 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗）——庫存權責從 v0.1 誤植的 Catalog Service 修正為 WMS Service，Catalog 只負責商品/價格展示
 3. 呼叫 Promotions Service 驗證並套用優惠券
-4. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易）
-5. 呼叫 Payment Service 建立付款紀錄
-6. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
-7. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
+4. 呼叫 **Vendor Service** 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`，用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈（詳見 [17-service-order.md](17-service-order.md) §4）
+5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易）
+6. 呼叫 Payment Service 建立付款紀錄
+7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
+8. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
 
 通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列。詳細步驟與補償邏輯見 [17-service-order.md](17-service-order.md)。
 
@@ -271,7 +287,7 @@ sequenceDiagram
 ## 9. 與 ShyeCMS 的關係（重申決策 C）
 
 - 這套平台的**任何一行程式碼**都不會呼叫 ShyeCMS。
-- 功能開關（例如「是否開放貨到付款」「是否啟用優惠券模組」）在此平台內以**自己的設定檔/環境變數**表示，部署當下由維運人員依 ShyeCMS 裡的合約紀錄手動填入（見 [01-architecture.md](01-architecture.md) §3），執行期不做任何外部查詢。
+- 功能開關（例如「是否開放貨到付款」「是否啟用優惠券模組」）在此平台內以**環境變數**（`FEATUREFLAGS__<FlagName>`，存放在 `ecommerce-deploy-<客戶代稱>` repo 的 `.env`）表示，部署當下由維運人員依 ShyeCMS 裡的合約紀錄手動填入，執行期不做任何外部查詢，具體存放位置與命名慣例見 [01-architecture.md](01-architecture.md) §3。這是**合約層級**的主開關（決定某功能在這個客戶部署裡整個開不開放），與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己在 `StoreSettings` 決定「目前要不要用」是不同層級——主開關關閉時，`StoreSettings` 裡對應的選項即使賣家開著也不會生效。
 - 用量統計（GMV、商品數等）留在自己的 Analytics Service 內供賣家/平台後台檢視，**不會**、也沒有機制回傳給拾夜科技（決策 D）。
 
 ## 10. 待決議事項

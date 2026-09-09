@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應 [10-gap-analysis.md](10-gap-analysis.md) §1、§7 累積的多項缺口：跨服務共通慣例未定義、Markdown 處理管線各服務各自實作、資訊安全性需要正式收斂 |
+| v0.2 | 2026-09-08 | ordinarycas | §3 補充「各服務文件 API 大綱的讀法」統一約定，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的內部端點認證註記不一致疑慮——以本節為準，不需逐服務重複載明兩層防禦 |
 
 > 本文件是 15 個微服務**都必須遵守**的共通規則，不是某一個服務的規格。凡是本文件定義過的慣例，各服務文件（[11](11-service-identity.md)–[25](25-service-gateway.md)）不重複定義，只在需要偏離慣例時特別註明。
 
@@ -56,6 +57,8 @@ string RenderMarkdownToSafeHtml(string markdown)
 | 第二層：服務身分 JWT（縱深防禦） | 呼叫方（如 Order Service 呼叫 WMS）夾帶一個內部專用的短效 JWT，內含 `service` claim（如 `service: order-service`），被呼叫方驗證此 claim 屬於允許呼叫的服務清單——即使網路隔離被繞過（如設定錯誤），這層仍能擋下非授權服務的呼叫 |
 
 簽發方式沿用既有 Open API Gateway pilot 已驗證的模式（同一把 `Jwt:SigningKey` 簽發短效 token，見 [25-service-gateway.md](25-service-gateway.md)），不另外引入 mTLS——單一 VPS 內部網路的威脅模型，mTLS 的額外憑證管理成本換不到相應的效益。
+
+**各服務文件 API 大綱的讀法（統一約定，解決註記不一致的疑慮）**：任何端點只要標示為「內部」或路徑帶 `/internal/v1/...` 前綴，就代表**兩層防禦同時適用**，不需要每個服務文件都重複寫一次「網路隔離＋服務身分 JWT」。若某端點在「內部」之外額外註明「僅限某服務呼叫」（如「內部（僅 Order Service 可呼叫）」），代表的是第二層服務身分 JWT 的 `service` claim 只允許該服務通過，是對本節規則的**進一步限縮**，不是另一套獨立機制；沒有額外註明時，預設允許任何持有效服務身分 JWT 的內部服務呼叫。
 
 ## 4. 資安基準（所有服務適用）
 

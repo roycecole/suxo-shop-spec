@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+| v0.2 | 2026-09-08 | ordinarycas | `Payment` 補上 `ProviderTransactionId` 欄位與 `(Provider, ProviderTransactionId)` 唯一索引，把 §4「重複識別」從文字承諾落實成資料層保證；§2 補充說明 COD 不屬於本表的金流廠商，啟用與否唯一歸屬 [14-service-vendor.md](14-service-vendor.md) 的 `StoreSettings.CodPaymentEnabled`（見 [10-gap-analysis.md](10-gap-analysis.md) §10、§11） |
 
 ## 1. 職責
 
@@ -20,11 +21,13 @@
 
 每家廠商**各自獨立開關**：賣家後台逐家設定「啟用/測試模式/商店代號/HashKey/HashIV」，未啟用或設定不完整的廠商不會出現在前台結帳頁。
 
+> **COD（貨到付款）不算本表的「廠商」**：COD 不需要商店代號/HashKey，也沒有 server-to-server 回調要驗章，性質上是純粹的營運/物流選擇，不是金流閘道整合。COD 是否開放給買家選擇，唯一歸屬 [14-service-vendor.md](14-service-vendor.md) 的 `StoreSettings.CodPaymentEnabled`，本服務**不**另外提供 COD 專屬的啟用開關，避免同一件事有兩個地方可以設定、卻沒有明訂誰優先。買家選擇 COD 結帳時，本服務僅建立 `Method=COD`、`Status=Pending` 的 `Payment` 紀錄（不產生導轉表單、不等待回調），實際收款由賣家出貨後透過 §7 新增的端點手動標記（見 `PUT /api/v1/vendor/payments/{orderId}/mark-cod-received`）。
+
 ## 3. 資料模型
 
 | 實體 | 說明 |
 |---|---|
-| Payment | OrderId、Method（CreditCard/LinePay/ATM/CVS/COD）、Provider、Status（Pending/Success/Failed/Refunded）、TransactionId、Amount/PaidAt |
+| Payment | OrderId、Method（CreditCard/LinePay/ATM/CVS/COD）、Provider、Status（Pending/Success/Failed/Refunded）、TransactionId、`ProviderTransactionId`（廠商端交易序號，如 ECPay 的 `TradeNo`；COD 無廠商回調，此欄位為 null）、Amount/PaidAt。`(Provider, ProviderTransactionId)` 唯一索引（`ProviderTransactionId` 非 null 時），作為回調去重的資料層保證 |
 | PaymentProviderSettings | 逐廠商的啟用狀態、加密後的商店代號/金鑰 |
 | PaymentCallbackLog | 所有回調（含驗章失敗者）都寫入，**永不刪除**，是對帳爭議的唯一證據 |
 
@@ -34,7 +37,7 @@
 |---|---|
 | 驗章 | 各廠商演算法驗證簽章，失敗一律不更新訂單 |
 | 金額比對 | 回調金額與原訂單差距超過 1 元即拒絕，防止竄改 |
-| 重複識別 | 已付款的訂單重複回調會被識別為「已處理」而不重複記帳 |
+| 重複識別 | 依 `(Provider, ProviderTransactionId)` 唯一索引識別：寫入 `Payment.ProviderTransactionId` 前先查詢是否已存在相同組合且 `Status=Success`，是則直接回應成功、不重複記帳；唯一索引本身作為併發下的最後一道資料層防線（見 §3） |
 
 ## 5. 金鑰保管
 
@@ -51,6 +54,7 @@ HashKey/HashIV 以 Data Protection 加密後存入資料庫，後台不回傳明
 | `POST /internal/v1/payments/orders/{id}/redirect` | 結帳 Saga 內部呼叫：產生含驗章的表單欄位 | 內部（僅 Order Service） |
 | `POST /api/v1/payments/callback/{provider}` | 金流商 server-to-server 回調 | 對外開放（簽章驗證） |
 | `GET /api/v1/vendor/payment-settings` | 賣家查看/設定逐廠商啟用狀態 | 賣家 |
+| `PUT /api/v1/vendor/payments/{orderId}/mark-cod-received` | 賣家標記 COD 訂單已當面收款（`Payment.Status` → `Success`） | 賣家 |
 | `GET /internal/v1/payments/support/{orderId}/callback-log` | 供 `PlatformSupportStaff` 查看回調紀錄，排查金流異常 | 內部 + PlatformSupportStaff |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。

@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應「微服務各功能 API 文件，含 CMS、會員系統、WMS、訂單系統，API 需要版本控管」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §8 Catalog Service 匯出功能 API，回應「後台可產生 WooCommerce 匯入文件」需求 |
 | v0.3 | 2026-09-08 | ordinarycas | 回應「微服務拆成多個規格」需求：各服務的 API 大綱移至 [11](11-service-identity.md)–[25](25-service-gateway.md) 各自的文件，本文件只保留跨服務通用的版本控管策略與文件格式規範 |
+| v0.4 | 2026-09-08 | ordinarycas | §2 補充健康檢查端點的統一聲明；新增 §3 清單端點分頁慣例（原 §3/§4 遞移為 §4/§5），解決 [10-gap-analysis.md](10-gap-analysis.md) §10/§11 已列的兩項系統性缺口 |
 
 > 本文件只定義 API 文件的**格式規範與版本控管策略**，是所有微服務都要遵守的共通規則。各服務自己的端點清單見下方索引。
 
@@ -23,8 +24,32 @@
 - 每個服務各自提供 **OpenAPI 3.0** 規格（`GET /openapi/v{n}.json`），Development 環境自動輸出。
 - Open API Gateway（[25-service-gateway.md](25-service-gateway.md)）聚合各服務的 OpenAPI 文件，提供統一的文件入口（`/docs` 頁面模式），讓串接方（無論是爸芭樂自己的前端，或未來其他自建前端）能在一處看到所有服務的最新 API。
 - 錯誤格式統一採 **Problem Details (RFC 7807)**，微服務拆分後每個服務都要遵守同一格式，避免串接方需要為不同服務寫不同的錯誤處理邏輯。
+- 每個服務都必須提供 `/health/live`、`/health/ready`（見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1.2），這是**所有服務共通適用**的規則。各服務自己的 API 大綱表格**一律不重複列出**這兩個端點——看到某服務文件裡沒寫健康檢查端點，不代表該服務沒做，一律以本規則為準。
 
-## 3. 各服務 API 文件索引
+## 3. 清單端點分頁慣例
+
+所有回傳集合的 `GET` 端點（商品清單、批次清單、優惠券清單、賣家訂單清單等）一律遵守同一套分頁參數，不由各服務各自定義：
+
+| Query 參數 | 說明 |
+|---|---|
+| `page` | 頁碼，從 `1` 開始，未帶時預設 `1` |
+| `pageSize` | 每頁筆數，未帶時預設 `20`，上限 `100`（超過上限視為 `100`，不回應錯誤） |
+| `sort`（可選） | 排序欄位，未帶時預設依 `CreatedAt DESC` |
+
+回應格式統一採分頁 envelope，不直接回傳裸陣列：
+
+```json
+{
+  "items": [ /* ... */ ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 137
+}
+```
+
+各服務文件的 API 大綱表格看到清單類 `GET` 端點時，預設即適用本節慣例，不需要逐一重複列出這三個參數；若某端點的分頁行為需要偏離本節慣例（如採 cursor-based 分頁），須在該服務文件個別註明並說明理由。
+
+## 4. 各服務 API 文件索引
 
 | 服務 | 文件 |
 |---|---|
@@ -44,6 +69,6 @@
 | Reviews Service | [24-service-reviews.md](24-service-reviews.md) |
 | Open API Gateway | [25-service-gateway.md](25-service-gateway.md) |
 
-## 4. 待決議事項
+## 5. 待決議事項
 - [ ] Gateway 聚合文件的實際呈現方式（單一 Swagger UI 選單切換服務，或每服務各自子網址）
 - [ ] 內部 API（`/internal/v1/...`）是否也要對外揭露文件供拾夜科技工程團隊參考，或僅存於程式碼註解/內部 Wiki

@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)、[09-api-specification.md](09-api-specification.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | `RichText` 區塊內容改為 Markdown 儲存，回應「後台內容編輯使用 Markdown」需求 |
 | v0.3 | 2026-09-08 | ordinarycas | §2 補上 `Translation` 表，落實 [28-i18n.md](28-i18n.md) §3 列出但本文件尚未實作的多語系需求 |
+| v0.4 | 2026-09-08 | ordinarycas | §4 新增賣家後台讀取目前草稿內容的 `GET` 端點——先前只有公開的「取得已發佈版型」，賣家編輯器無法載入尚未發佈的變更內容（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 
 ## 1. 職責
 
@@ -32,6 +33,7 @@
 | Method & Path | 說明 | 認證 |
 |---|---|---|
 | `GET /api/v1/cms/page-layouts/{pageType}` | 取得已發佈的頁面版型（前台 SSG 建置時呼叫） | 公開 |
+| `GET /api/v1/vendor/cms/page-layouts/{pageType}` | 賣家後台讀取目前草稿內容（含尚未發佈的變更），供編輯器載入目前設定 | 賣家 |
 | `PUT /api/v1/cms/page-layouts/{pageType}` | 更新版型內容（區塊順序、顯示/隱藏、Config） | 賣家 |
 | `POST /api/v1/cms/page-layouts/{pageType}/publish` | 將草稿版型發佈 | 賣家 |
 | `POST /internal/v1/cms/revalidate-webhook` | 版型變更時通知前台 Next.js 觸發 ISR 重新產生 | 內部（Gateway 或 CMS 自己觸發） |

@@ -6,6 +6,8 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應「確認專案清單」需求，彙整 ShyeCMS 與電商平台各自的完整 repo/專案結構 |
 | v0.2 | 2026-09-08 | ordinarycas | 回應「預期該專案的資料夾目錄結構」需求：補上兩個 repo 的實際資料夾樹狀圖、服務內部分層慣例、共用 .NET 函式庫落地位置；解決 `.sln` 與 `packages/api-client` 待決議事項 |
 | v0.3 | 2026-09-08 | ordinarycas | **推翻 v0.2 的部分決策**：(1) React 前端一律獨立成自己的 repo，不跟後端放一起；(2) 電商平台的前台（買家）與後台（賣家）也彼此獨立成兩個 repo，避免其中一邊的原始碼/排版被另一邊的建置產物意外帶到；(3) 重新檢視「15 個服務共用一個 `.sln`」的維運風險並推翻，改為服務各自獨立、共用邏輯改用版本化套件而非專案參照。因應 repo 數量增加，新增 `ecommerce-deploy` 部署設定 repo 統整多個 repo 建置出的映像檔 |
+| v0.4 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第八輪複查發現：§3.1 `services/identity/` 的範例底下複製貼上時忘了改，命名空間誤植為 `SuxoShop.Catalog.*`，已訂正為 `SuxoShop.Identity.*` |
+| v0.5 | 2026-09-09 | ordinarycas | §3.3 `ecommerce-admin/features/` 補上 promotions/shipping/reviews 三個資料夾，同步 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) v0.5 已新增的三個賣家後台功能（實作 repo 已依 08 建了 10 個 features 資料夾，本文件範本至此對齊） |
 
 > 本文件回答「總共會有哪些 repo、各自資料夾長什麼樣子」。
 
@@ -76,10 +78,10 @@ ecommerce-services/
 │   ├── identity/
 │   │   ├── Dockerfile
 │   │   ├── src/
-│   │   │   ├── SuxoShop.Catalog.Api/            （以 Identity 為例，其餘服務同構）
-│   │   │   ├── SuxoShop.Catalog.Application/
-│   │   │   ├── SuxoShop.Catalog.Domain/
-│   │   │   └── SuxoShop.Catalog.Infrastructure/
+│   │   │   ├── SuxoShop.Identity.Api/            （以 Identity 為例，其餘服務同構）
+│   │   │   ├── SuxoShop.Identity.Application/
+│   │   │   ├── SuxoShop.Identity.Domain/
+│   │   │   └── SuxoShop.Identity.Infrastructure/
 │   │   └── tests/
 │   ├── catalog/            （結構同上）
 │   ├── wms/
@@ -136,7 +138,10 @@ ecommerce-admin/
 │   │   ├── analytics/                 銷售數據，含 Lightweight Charts（22 §4）
 │   │   ├── cms/                       首頁版型，含 Markdown 編輯器
 │   │   ├── settings/                  StoreSettings（08 §2）
-│   │   └── woocommerce-export/        WooCommerce CSV 匯出（08 §5）
+│   │   ├── woocommerce-export/        WooCommerce CSV 匯出（08 §5）
+│   │   ├── promotions/                優惠券管理（08 §1 v0.5 新增）
+│   │   ├── shipping/                  運費規則設定（08 §1 v0.5 新增）
+│   │   └── reviews/                   評價管理（08 §1 v0.5 新增）
 │   ├── components/
 │   ├── i18n/                          react-i18next 語系檔（28-i18n.md §5）
 │   ├── api/                           呼叫 API 的型別化 Client（見 §5.3）

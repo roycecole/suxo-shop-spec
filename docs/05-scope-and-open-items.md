@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | 因應決策 C、D 推翻：移除已不適用的「即時推送」「憑證輪替」等待決議項；新增「零連接」為已鎖定決策而非開放項目；新增與 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 相關的排除項目 |
 | v0.3 | 2026-09-08 | ordinarycas | 與前身規格全面比對後，新增 2 項明確排除：平台管理員角色（暫定單一賣家自營）、本文件集專屬開發環境文件（先列待辦） |
 | v0.4 | 2026-09-08 | ordinarycas | 釐清 §3 範圍：本節標題原稱「待決議事項彙整」但實際只涵蓋 ShyeCMS 文件（[01](01-architecture.md)–[03](03-client-lifecycle.md)），並未包含電商平台/微服務側累積的其他待決議事項，容易誤導成「全規格彙整」。改名並加註說明，完整跨文件清單見新增的 [30-open-decisions-register.md](30-open-decisions-register.md) |
+| v0.5 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第八輪複查發現本節比 [30-open-decisions-register.md](30-open-decisions-register.md) §2 少列 2 項（皆屬 ShyeCMS 範圍卻遺漏同步）：補上「GMV 超額抽成的計算依據完全空白」（[02-data-model.md](02-data-model.md) §6）與「開通部署（Provisioning）是否要自動化」（[03-client-lifecycle.md](03-client-lifecycle.md) §7） |
 
 > 明確寫出「本輪刻意不做什麼」，避免日後誤以為是遺漏。**本文件範圍限定 ShyeCMS（[00](00-overview.md)–[05](05-scope-and-open-items.md)）**，電商平台/微服務側的排除項目與待決議事項見各自文件與 [30-open-decisions-register.md](30-open-decisions-register.md)。
 
@@ -32,6 +33,8 @@
 
 - [ ] 若未來出現濫用/超用糾紛，要靠什麼機制舉證（合約條款？人工稽核頻率？）（見 [01-architecture.md](01-architecture.md) §5）
 - [ ] `ClientSubscription.Status = PastDue` 時的標準作業流程（見 [02-data-model.md](02-data-model.md) §6）
+- [ ] GMV 超額抽成的計算依據完全空白（見 [02-data-model.md](02-data-model.md) §6）
+- [ ] 開通部署（Provisioning）是否要自動化（見 [03-client-lifecycle.md](03-client-lifecycle.md) §7）
 - [ ] `Suspended` 狀態下客戶站台該顯示什麼訊息給該客戶的買家/賣家（見 [03-client-lifecycle.md](03-client-lifecycle.md) §7）
 - [ ] 客戶終止合作的資料交還/刪除政策（見 [03-client-lifecycle.md](03-client-lifecycle.md) §7）
 - [ ] GMV 計費若要恢復可行性，需要客戶方同意的資料申報機制設計（不透過連線取得，見 [01-architecture.md](01-architecture.md) §5）

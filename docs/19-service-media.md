@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+| v0.2 | 2026-09-08 | ordinarycas | `MediaAsset` 補上 `VendorId` 欄位——先前沒有歸屬欄位，無法對照 `VendorStorageQuota` 算出「這個賣家用了多少配額」（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 
 ## 1. 職責
 
@@ -24,9 +25,9 @@
 
 | 實體 | 說明 |
 |---|---|
-| MediaAsset | Url、Provider、ThumbnailBytes、SortOrder |
+| MediaAsset | `VendorId`（歸屬賣家，用於配額計算）、Url、Provider、ThumbnailBytes、SortOrder |
 | StorageProviderSettings | 目前啟用的儲存後端與其憑證（加密存放） |
-| VendorStorageQuota | 逐賣家可覆寫的上傳配額，全站有預設值 |
+| VendorStorageQuota | 逐賣家可覆寫的上傳配額，全站有預設值；目前用量＝依 `VendorId` 加總該賣家所有 `MediaAsset` 的檔案大小 |
 
 ## 4. 安全處理
 

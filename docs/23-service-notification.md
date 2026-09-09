@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+| v0.2 | 2026-09-08 | ordinarycas | §4 補上具體重試參數（先前只寫「僅記錄並重試」），解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的缺口 |
 
 ## 1. 職責
 
@@ -26,6 +27,7 @@ LINE 官方帳號整合（LINE Messaging API）、通知派送。讓賣家不需
 ## 4. 容錯與安全
 
 - LINE API 呼叫失敗（逾時/額度限制）僅記錄並重試，**不可影響訂單本身的建立與核心流程**（容錯隔離原則）。
+- **重試參數**：採指數退避，重試間隔 1 秒 → 5 秒 → 30 秒 → 2 分鐘，最多重試 **4 次**（含首次共 5 次嘗試）；全部失敗後 `LineNotificationLog.Status = Failed`，不再自動重試，僅留紀錄供賣家/`PlatformSupportStaff` 查看（訂單本身不受影響，買家/賣家可在後台自行查看訂單狀態，LINE 推播只是加值提醒）。
 - Channel Secret / Channel Access Token 需加密儲存，Webhook 需驗證 LINE 簽章（`X-Line-Signature`）避免偽造請求。
 
 ## 5. 爸芭樂案例

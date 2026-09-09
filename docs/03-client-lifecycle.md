@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立 |
 | v0.2 | 2026-09-08 | ordinarycas | 因應決策 C（ShyeCMS 不連接客戶平台）移除 §3 建立內部服務憑證/Entitlement 供 Gateway 查詢的步驟，改為純人工設定說明 |
 | v0.3 | 2026-09-08 | ordinarycas | §1 生命週期總覽改用 Mermaid 狀態圖繪製 |
+| v0.4 | 2026-09-08 | ordinarycas | §5（暫停）補上與 §3/§4 一致的人工同步提醒——先前漏寫，容易誤讀成切 `ClientFeatureEntitlement.Enabled` 就等於客戶站台自動關站（見 [10-gap-analysis.md](10-gap-analysis.md) §12） |
 
 > 本文件描述拾夜科技員工在 ShyeCMS 上，從一個客戶（如「爸芭樂」）洽談到終止合作的完整操作流程。全程由拾夜科技員工在 ShyeCMS 執行——依決策 B，客戶本身不操作此系統。
 
@@ -53,7 +54,8 @@ stateDiagram-v2
 
 - 適用情境：客戶欠費、違反使用條款、或客戶主動要求暫停營運但保留資料。
 - 操作：`Client.Status = Suspended`；建議連動將所有 `ClientFeatureEntitlement.Enabled` 批次設為 `false`（等同全站功能關閉，但**部署環境與資料庫不刪除**）。
-- 可恢復：清償/問題解決後，人工將狀態改回 `Active` 並還原功能開關。
+- **這一步只更新 ShyeCMS 自己的紀錄，不會、也無法自動關閉客戶站台**（決策 C，零連接）——如同 §3/§4 已提醒過的，實際要讓客戶環境反映暫停狀態，需要維運人員額外**手動**登入該客戶環境調整設定檔/環境變數（見 [01-architecture.md](01-architecture.md) §3）。切掉 `ClientFeatureEntitlement.Enabled` 只是 ShyeCMS 內部合約紀錄的更新，不是執行期開關。
+- 可恢復：清償/問題解決後，人工將狀態改回 `Active` 並還原功能開關，同樣需要額外手動同步客戶環境。
 
 ## 6. 階段五：終止合作（Terminated）
 
