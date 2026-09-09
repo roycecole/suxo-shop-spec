@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | `Description`/`ShortDescription` 儲存格式改為 Markdown，回應「後台內容編輯使用 Markdown」需求；連帶修正 WooCommerce 匯出的轉換規則 |
 | v0.3 | 2026-09-08 | ordinarycas | §2 補上 `Translation` 表；§6 的 Markdown/XSS 待決議改為引用 [29-shared-service-conventions.md](29-shared-service-conventions.md) 已定案的共用管線 |
 | v0.4 | 2026-09-08 | ordinarycas | §5 明確定義商品讀取端點回傳 `DescriptionHtml`（已轉換安全 HTML）而非原始 Markdown，解決 [10-gap-analysis.md](10-gap-analysis.md) §10 已列「前端可能繞過共用消毒管線」的缺口 |
+| v0.5 | 2026-09-09 | ordinarycas | §6 商品搜尋效能待決議項已解決：`ecommerce-services` 為 `Product.Name` 加上 `pg_trgm` GIN 索引（非原設想的 tsvector 全文檢索，理由見該條目），回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -53,6 +54,6 @@
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
 ## 6. 待決議事項
-- [ ] 商品搜尋效能：關鍵字若以 `LIKE '%kw%'` 實作無法用索引，商品量成長後需改 PostgreSQL 全文檢索（tsvector + GIN 索引）
+- [x] ~~商品搜尋效能：關鍵字若以 `LIKE '%kw%'` 實作無法用索引，商品量成長後需改 PostgreSQL 全文檢索（tsvector + GIN 索引）~~——**已解決（採 pg_trgm 而非 tsvector）**：`ecommerce-services` 已在 `Product.Name` 加上 `pg_trgm` 三元組 GIN 索引（Migration `AddProductNameTrigramIndex`，已實測 `CREATE EXTENSION pg_trgm` + `CREATE INDEX ... USING gin ("Name" gin_trgm_ops)` 成功套用，查詢計畫確認 `ILIKE` 可命中該索引）。刻意選 pg_trgm 而非原本設想的 tsvector 全文檢索：(1) 維持現有「子字串比對」語意不變，tsvector 的斷詞/詞幹化會改變「符合」的定義，屬於更大幅的搜尋行為變更，不在本次範圍；(2) `ListProductsQueryHandler` 刻意用同步 LINQ 查詢以相容記憶體假 DbContext 測試替身，`EF.Functions.ToTsVector` 這類 PostgreSQL 專屬函式無法被假實作轉譯，會讓現有測試套件失效——pg_trgm 索引則完全不需要改動查詢程式碼本身（既有的 `Name.Contains(keyword)` 原樣保留），只是替它加速。43 個既有 Catalog 測試全數通過，無回歸
 - [ ] 稅務欄位（Tax status/class）是否要正式納入 Product 欄位，或維持匯出時固定值（見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6 待決議）
 - [x] ~~前台渲染 Markdown 為 HTML 時的 XSS 防護~~——已定案採共用管線，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §2

@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §8 Catalog Service 匯出功能 API，回應「後台可產生 WooCommerce 匯入文件」需求 |
 | v0.3 | 2026-09-08 | ordinarycas | 回應「微服務拆成多個規格」需求：各服務的 API 大綱移至 [11](11-service-identity.md)–[25](25-service-gateway.md) 各自的文件，本文件只保留跨服務通用的版本控管策略與文件格式規範 |
 | v0.4 | 2026-09-08 | ordinarycas | §2 補充健康檢查端點的統一聲明；新增 §3 清單端點分頁慣例（原 §3/§4 遞移為 §4/§5），解決 [10-gap-analysis.md](10-gap-analysis.md) §10/§11 已列的兩項系統性缺口 |
+| v0.5 | 2026-09-09 | ordinarycas | §4 解決 2 項待決議：Gateway 聚合文件呈現方式、內部 API 是否對外揭露文件，回應「將待決議事項列出來實作」需求 |
 
 > 本文件只定義 API 文件的**格式規範與版本控管策略**，是所有微服務都要遵守的共通規則。各服務自己的端點清單見下方索引。
 
@@ -70,5 +71,5 @@
 | Open API Gateway | [25-service-gateway.md](25-service-gateway.md) |
 
 ## 5. 待決議事項
-- [ ] Gateway 聚合文件的實際呈現方式（單一 Swagger UI 選單切換服務，或每服務各自子網址）
-- [ ] 內部 API（`/internal/v1/...`）是否也要對外揭露文件供拾夜科技工程團隊參考，或僅存於程式碼註解/內部 Wiki
+- [x] ~~Gateway 聚合文件的實際呈現方式（單一 Swagger UI 選單切換服務，或每服務各自子網址）~~——**已解決：單一 Swagger UI + 服務切換選單**，理由與現況見 [25-service-gateway.md](25-service-gateway.md) §7
+- [x] ~~內部 API（`/internal/v1/...`）是否也要對外揭露文件供拾夜科技工程團隊參考，或僅存於程式碼註解/內部 Wiki~~——**已解決：不另外揭露**，維持現狀（程式碼 XML doc 註解 + 本規格庫每份服務文件本身就是「內部 Wiki」，已逐一描述各服務的 `/internal/v1/*` 端點）。理由：`/internal/v1/*` 一律不經 Gateway 路由（見根目錄 CLAUDE.md 鎖定決策），唯一的消費者是拾夜科技自己的工程團隊，這批人本來就有本規格庫與程式碼庫的完整存取權，另外維護一份對外文件是重複勞動，沒有對應的獨立讀者

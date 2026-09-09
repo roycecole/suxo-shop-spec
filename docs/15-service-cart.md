@@ -4,6 +4,7 @@
 | 版本 | 日期 | 作者 | 說明 |
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
+| v0.2 | 2026-09-09 | ordinarycas | §5 訪客購物車自動清理排程待決議項已解決：定案 30 天未更新視為過期、每日背景排程清理，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -33,4 +34,4 @@
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
 ## 5. 待決議事項
-- [ ] 訪客購物車的自動清理排程（多久未更新視為過期）
+- [x] ~~訪客購物車的自動清理排程（多久未更新視為過期）~~——**已解決：30 天未更新視為過期，背景排程每日清理一次**。理由：Cart Service 加入購物車時**不**向 WMS 預留庫存（預留只發生在結帳當下，見 [17-service-order.md](17-service-order.md) §4），所以閒置購物車唯一的成本是資料庫儲存空間，沒有鎖住庫存的急迫性，可以給比較寬鬆的期限；30 天貼近一般電商「棄單挽回」的常見窗口（太短會刪掉使用者隔幾天回來想繼續結帳的購物車，太長則無意義地累積資料）。背景排程比照 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §5.5 WooCommerce 匯出、[17-service-order.md](17-service-order.md) §4.1 補償重試已驗證過的背景 Worker 模式，不需要新的技術選型

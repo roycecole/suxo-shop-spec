@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | `RichText` 區塊內容改為 Markdown 儲存，回應「後台內容編輯使用 Markdown」需求 |
 | v0.3 | 2026-09-08 | ordinarycas | §2 補上 `Translation` 表，落實 [28-i18n.md](28-i18n.md) §3 列出但本文件尚未實作的多語系需求 |
 | v0.4 | 2026-09-08 | ordinarycas | §4 新增賣家後台讀取目前草稿內容的 `GET` 端點——先前只有公開的「取得已發佈版型」，賣家編輯器無法載入尚未發佈的變更內容（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
+| v0.5 | 2026-09-09 | ordinarycas | §5 標記 `StoreSettings` 歸屬待決議項已解決：定案歸屬 Vendor Service，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -42,4 +43,4 @@
 
 ## 5. 待決議事項
 - [ ] Page Builder 實作方式：自建拖拉式編輯器，還是先做「後台表單設定區塊參數」的簡化版
-- [ ] `StoreSettings`（賣家自家功能開關）是否應歸屬本服務而非 Vendor Service（見 [14-service-vendor.md](14-service-vendor.md) §4）
+- [x] ~~`StoreSettings`（賣家自家功能開關）是否應歸屬本服務而非 Vendor Service~~——**已解決：定案歸屬 Vendor Service，不歸本服務**，理由與現況見 [14-service-vendor.md](14-service-vendor.md) §5
