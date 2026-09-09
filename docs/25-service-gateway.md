@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §3.1 匿名端點速率限制，補上 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 已要求、但本文件先前只涵蓋持金鑰呼叫的限流缺口（見 [10-gap-analysis.md](10-gap-analysis.md) §11） |
+| v0.3 | 2026-09-09 | ordinarycas | 回應「反向代理引擎選型（YARP vs 自建）已定案」指示：新增 §4.1 定案採用 `Yarp.ReverseProxy`（YARP）取代手刻 `HttpClient` 轉發的過渡實作（含定案理由與落地現況）；§7 補列該選型為待決議項並同步標記已解決——此選型先前只散見於實作，未曾正式列入待決議清單 |
 
 ## 1. 職責
 
@@ -46,6 +47,17 @@
 
 Gateway 不新開一組「內部 API」給自己呼叫，而是直接路由到各微服務既有的端點（如 `/internal/v1/...` 或帶授權的 `/api/v1/vendor/...`），避免內部端點與對外契約不同步。公開、無需授權範圍的資料（如商品查詢）直接原始位元流轉發，不重複定義回應 DTO，避免型別漂移。
 
+### 4.1 反向代理引擎：YARP（2026-09-09 定案）
+
+路由/轉發引擎**選定 `Yarp.ReverseProxy`（YARP）**，取代先前手刻 `HttpClient` 轉發的過渡實作。定案理由：
+
+1. 微軟官方維護，串流、hop-by-hop 標頭、HTTP/2 等轉發細節成熟，不需自行踩坑。
+2. 路由表/叢集完全設定驅動（appsettings 的 `ReverseProxy` 區段），逐客戶部署可由環境變數覆寫下游位址，與 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6 的部署模式相容。
+3. 避免自建轉發隨聚合/重試/限流需求長成第二個框架——這些 YARP 都有現成擴充點。
+4. 單一 VPS、單客戶流量規模下，自建的唯一優勢「省一個依賴」不敵維護成本。
+
+落地現況：Gateway 已改用 YARP，路由表涵蓋全部 14 個領域服務的公開 `/api/v1/*` 前綴（Reviews 掛在 `/api/v1/products/{id}/reviews`、`/api/v1/orders/{id}/reviews` 的較特定路由，優先於 Catalog/Order 的字首路由）；金鑰驗證（§3）、聚合、限流（§3.1）仍未實作，維持待辦。
+
 ## 5. 資料模型
 
 | 實體 | 說明 |
@@ -65,3 +77,4 @@ Gateway 不新開一組「內部 API」給自己呼叫，而是直接路由到�
 - [ ] 是否需要 Webhook 主動推播（訂單成立時通知外部系統），目前僅支援輪詢
 - [ ] 是否開放建立訂單的公開 API（目前只讀不寫，避免外部系統誤建訂單）
 - [ ] Gateway 聚合文件的實際呈現方式（單一 Swagger UI 選單切換服務，或每服務各自子網址）
+- [x] ~~反向代理引擎選型：路由/轉發是採用現成的 YARP，還是維持自建 `HttpClient` 轉發~~——**已解決（2026-09-09）**：定案採用 **`Yarp.ReverseProxy`（YARP）**，取代手刻 `HttpClient` 轉發的過渡實作，理由與落地現況見 §4.1；金鑰驗證/聚合/限流不在此決策範圍內，維持本清單既有待辦

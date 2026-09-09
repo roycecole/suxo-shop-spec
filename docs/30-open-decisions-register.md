@@ -6,12 +6,13 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應「待決議事項」需求：彙整全部 29 份文件累積的 77 項待決議，並依風險/急迫性挑出前 10 項優先處理 |
 | v0.2 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第七輪跨文件複查發現 §1、§6 引用的「[13-service-wms.md](13-service-wms.md) §6 Saga 補償失敗」項目實際上源文件從未寫過；已回頭補上該文件的待決議項（見其 v0.2 異動紀錄），本次同步新增 §4 對應列，統計數字改為 78 項 |
 | v0.3 | 2026-09-08 | ordinarycas | §4 移除「Order / Correlation ID 貫穿追蹤機制尚未設計」列——[17-service-order.md](17-service-order.md) §6 已標記解決（見其 v0.3），此為第八輪複查後的同步；[28-i18n.md](28-i18n.md) 章節編號調整（原 §9 待決議事項改為 §8），§1、§5 的引用同步更新；統計數字改為 77 項 |
+| v0.4 | 2026-09-09 | ordinarycas | 同步 [25-service-gateway.md](25-service-gateway.md) v0.3：反向代理引擎選型（YARP vs 自建）於 2026-09-09 定案採用 YARP——該項先前未曾列入任何待決議清單，本次於來源文件補列並即標記已解決，故 §4 不新增列，僅更新統計為 77 項未解決 + 3 項已解決；前 10 名清單不受影響 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**77 項未解決** + 2 項已解決（[12-service-catalog.md](12-service-catalog.md) 的 Markdown XSS 防護、[17-service-order.md](17-service-order.md) 的 Correlation ID 貫穿追蹤，皆已於 [29-shared-service-conventions.md](29-shared-service-conventions.md) 定案，不列入本表）。
+統計：**77 項未解決** + 3 項已解決（[12-service-catalog.md](12-service-catalog.md) 的 Markdown XSS 防護、[17-service-order.md](17-service-order.md) 的 Correlation ID 貫穿追蹤，皆已於 [29-shared-service-conventions.md](29-shared-service-conventions.md) 定案；[25-service-gateway.md](25-service-gateway.md) 的反向代理引擎選型已於 2026-09-09 定案採用 YARP，見其 §4.1——已解決項目不列入本表）。
 
 ## 1. 前 10 項建議優先處理（依風險/急迫性排序，非文件順序）
 
