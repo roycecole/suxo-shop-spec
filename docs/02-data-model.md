@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | 因應決策 C、D 推翻：`ClientDeployment` 移除連線用欄位（`GatewayEndpoint`/`InternalServiceCredentialRef`），改純盤點用途；`ClientFeatureEntitlement` 註記為商業紀錄非技術強制；移除 §5 `UsageSnapshot`（ShyeCMS 不取得客戶用量資料） |
 | v0.3 | 2026-09-08 | ordinarycas | 新增 §0 ERD（Mermaid），彙整本文件所有實體關聯 |
 | v0.4 | 2026-09-10 | ordinarycas | §6 `PastDue` SOP 待決議項已解決：定案採分階段處理流程（提醒信→人工聯繫→視情況暫停功能→轉終止評估）；GMV 抽成計算依據維持開放，標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
+| v0.5 | 2026-09-10 | ordinarycas | §6 GMV 超額抽成計算依據補上已查證的業界參考區間（B2C 電商 SaaS 平台 GMV 抽成常見 1–3%），仍標記需要業主決策、非規格代為挑選具體比例，回應「繼續補完 9 項未解決」需求 |
 
 > 本文件列出 ShyeCMS 自己的資料庫實體，與 v1（`docs/02-data-model.md`）的客戶端資料庫**完全分開、互不共用**——ShyeCMS 只儲存「關於客戶的管理資訊」，不儲存客戶自己的商品/訂單/會員資料。型別為建議型別。
 
@@ -181,4 +182,4 @@ erDiagram
   4. 逾期第 30 天：轉客戶終止合作流程評估（見 [03-client-lifecycle.md](03-client-lifecycle.md) §6）。
   
   ShyeCMS 本身只需要能記錄每個階段的處理狀態與時間點（`AuditLog` 已有的機制即可涵蓋），不需要新增自動化排程執行前兩階段以外的動作——第 3、4 階段刻意保留人工判斷空間，避免自動停用正在跟客戶協商中的帳號。
-- [ ] **需要業主決策（非技術判斷）**：GMV 超額抽成的計算依據完全空白（決策 D 排除了拉取客戶用量資料的路徑）——這是具體的抽成比例/計費模式，屬於商業模式本身，與 [01-architecture.md](01-architecture.md) §5「GMV 計費資料申報機制」是同一組待決議的兩面（一個問「怎麼拿到數字」、一個問「拿到數字後怎麼算錢」），建議業主一併決策，不在本表範圍內單方面回答
+- [ ] **需要業主決策（非技術判斷，已查證業界參考區間，非規格代為定案）**：GMV 超額抽成的計算依據完全空白——具體比例本身是拾夜科技的定價策略，只有業主能決定，這裡不代為挑一個數字。**已查證的業界參考**（見 [SaaS GMV 計費說明](https://ordwaylabs.com/blog/metrics-blog/saas-gmv-calculation-examples/)、[電商平台定價指南 2026](https://vendorbenchmark.com/benchmarks/ecommerce-digital-commerce-pricing-guide)，供業主決策時參考，不是建議值）：B2C 電商 SaaS 平台的 GMV 抽成（take-rate）常見落在 **1%–3%** 區間，依年交易量、地理涵蓋範圍、綁定其他服務（如同時含金流/物流）而有差異；知名的 SaaS 電商平台疊加層（如 Mirakl）採固定年費（約 9 萬美元/年量級）外加約 2% 的 GMV 抽成的複合式定價。這些是**海外市場、不同規模的參考點**，不是「所以拾夜科技應該收 X%」的建議——ShyeTech 目前只有極少數客戶、GMV 計費機制本身也還沒真的啟用（決策 D 已排除自動取得客戶用量資料的路徑，見 [01-architecture.md](01-architecture.md) §5），實際比例應該由業主依自己的成本結構與市場定位決定，本規格庫僅提供決策時的外部參考基準，與 [01-architecture.md](01-architecture.md) §5「GMV 計費資料申報機制」是同一組待決議的兩面（一個問「怎麼拿到數字」、一個問「拿到數字後怎麼算錢」），建議業主一併決策
