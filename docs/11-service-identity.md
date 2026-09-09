@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | 定義 `DELETE /api/v1/identity/account` 刪除後的關聯資料處理方式（採匿名化保留，非級聯刪除），解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的缺口 |
 | v0.3 | 2026-09-09 | ordinarycas | 回應「新增消費者會員登入，先保留 Google、Line 登入」需求：新增 §5.1 消費者會員（Email+密碼）註冊/信箱驗證/忘記密碼/Refresh Token 完整流程設計；§2 新增 `RefreshToken`/`AccountActionToken` 實體與 `User.EmailVerifiedAt` 欄位；§5 API 大綱補上 7 個新端點；§6 Refresh Token 待決議項標記已解決；LINE/Google 維持既有保留狀態不變，本輪不涉及 |
 | v0.4 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增 2 項待決議——§5.1 適用範圍是否涵蓋 Seller/SellerStaff 待書面澄清、訪客升級為會員的自動關聯時機與信箱驗證的交互未定義（帳號冒領風險） |
+| v0.5 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§5.1 新增「訪客升級為會員」設計——沿用同一 `User.Id`（訂單本來就指向它，不需搬移資料），密碼暫存於新增的 `AccountActionToken.PendingPasswordHash`，驗證通過才寫入 `User.PasswordHash`；`register` 端點依 Email 是否已是無密碼訪客帳號分兩種行為；§2 `AccountActionToken` 補上該欄位；§6 對應待決議項標記已解決 |
 
 ## 1. 職責
 
@@ -20,7 +21,7 @@
 | ExternalLogin | User 對應的第三方登入（LINE/Google），Provider + ProviderUserId |
 | Address | 收件/帳單地址，多筆對應一個 User，含 IsDefault |
 | RefreshToken | Id、UserId、TokenHash（僅存雜湊，比照密碼雜湊原則不存明文）、ExpiresAt、RevokedAt（nullable）、CreatedAt，見 §5.1 |
-| AccountActionToken | Id、UserId、Purpose（`EmailVerification`/`PasswordReset`）、TokenHash、ExpiresAt、UsedAt（nullable）、CreatedAt，見 §5.1 |
+| AccountActionToken | Id、UserId、Purpose（`EmailVerification`/`PasswordReset`）、TokenHash、ExpiresAt、UsedAt（nullable）、`PendingPasswordHash`（nullable，僅訪客升級為會員時使用，見 §5.1）、CreatedAt |
 | PlatformSupportStaff 帳號 | Role = `PlatformSupportStaff`，見 §4 |
 
 ## 3. 爸芭樂案例
@@ -55,9 +56,24 @@
 
 本節具體化「消費者會員登入」的完整流程，聚焦 Email + 密碼這條**必要**路徑（見 [07-storefront-requirements.md](07-storefront-requirements.md) §2）；LINE/Google 第三方登入維持**保留**狀態不變，本節不涉及。
 
-**註冊**：`POST /api/v1/identity/register` 固定建立 `Role=Buyer` 的 `User`，密碼最低要求 8 碼且需同時包含英文字母與數字，雜湊機制沿用 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 既有規範。賣家帳號建立方式不在此端點範圍——「爸芭樂」暫定單一賣家自營（見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2），不開放消費者自助註冊成賣家。
+**註冊**：`POST /api/v1/identity/register` 提交 Email + 密碼時，先依 Email 查詢是否已存在 `User`，分兩種情況：
 
-**信箱驗證（非阻擋式）**：註冊成功後產生 `AccountActionToken`（`Purpose=EmailVerification`，24 小時有效）並寄出驗證連結。**未驗證信箱不影響任何購買行為**——延續 [07-storefront-requirements.md](07-storefront-requirements.md) §1「免登入下單」的精神，會員身分本來就不是下單前提，未驗證只影響會員專屬功能（訂單歷史整合、未來的收藏/會員優惠）是否完整可用，不阻擋帳號本身的使用。`POST /api/v1/identity/verify-email` 驗證通過後將 `User.EmailVerifiedAt` 設為目前時間；`POST /api/v1/identity/resend-verification` 供使用者重新索取。
+| 情況 | 判定 | 行為 |
+|---|---|---|
+| 全新 Email | 查無對應 `User` | 立即建立 `Role=Buyer`、`PasswordHash` 已設定的 `User`，**立即可登入**（沿用下方「信箱驗證（非阻擋式）」） |
+| **既有訪客帳號**（曾訪客結帳過） | 已存在 `User` 且 `PasswordHash IS NULL`（[07-storefront-requirements.md](07-storefront-requirements.md) §1 訪客結帳建立的無密碼帳號） | **不立即設定 `PasswordHash`**，見下方「訪客升級為會員」 |
+
+密碼最低要求 8 碼且需同時包含英文字母與數字，雜湊機制沿用 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 既有規範。賣家帳號建立方式不在此端點範圍——「爸芭樂」暫定單一賣家自營（見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2），不開放消費者自助註冊成賣家。
+
+**信箱驗證（非阻擋式，僅適用全新 Email 註冊）**：註冊成功後產生 `AccountActionToken`（`Purpose=EmailVerification`，24 小時有效）並寄出驗證連結。**未驗證信箱不影響任何購買行為**——延續 [07-storefront-requirements.md](07-storefront-requirements.md) §1「免登入下單」的精神，會員身分本來就不是下單前提，未驗證只影響會員專屬功能（訂單歷史整合、未來的收藏/會員優惠）是否完整可用，不阻擋帳號本身的使用。`POST /api/v1/identity/verify-email` 驗證通過後將 `User.EmailVerifiedAt` 設為目前時間；`POST /api/v1/identity/resend-verification` 供使用者重新索取。
+
+**訪客升級為會員（解決既有待決議事項，唯一的阻擋式驗證情境）**：沿用 [07-storefront-requirements.md](07-storefront-requirements.md) §1「訪客結帳後可用同 Email 註冊，歷史訂單自動關聯到新帳號」的承諾，但**這裡的「自動關聯」不需要額外的資料搬移**——訪客結帳建立的 `User.Id` 本來就是所有歷史 `Order.BuyerId` 指向的對象（見 [07](07-storefront-requirements.md) §1、`guest-checkout-profile`），升級只是讓**同一個 `User.Id`** 從無密碼變成有密碼，訂單從頭到尾都沒有換過擁有者。真正需要設計的是「密碼何時生效」：
+
+1. 提交升級請求時，**不直接寫入 `User.PasswordHash`**，而是把密碼雜湊暫存於 `AccountActionToken.PendingPasswordHash`（`Purpose=EmailVerification`），並寄出驗證信——在這之前，`User` 維持原本的無密碼狀態，**不能登入**。
+2. `POST /api/v1/identity/verify-email` 驗證通過時，若該 Token 帶有 `PendingPasswordHash`，才**同時**把它寫入 `User.PasswordHash` 並設定 `EmailVerifiedAt`——驗證通過的那一刻，帳號才真正「升級」為可登入的會員，能看到歷史訂單。
+3. 這就是**唯一正確的安全邊界**：只要攻擊者不是信箱的實際擁有者，就永遠收不到、也點不到驗證連結，`PendingPasswordHash` 永遠不會被寫入 `User.PasswordHash`，攻擊者提交的密碼形同無效——不會有任何人能靠著「知道某個 Email 曾經訪客結帳過」就冒領對應的訂單歷史。
+4. 同一 `UserId` + `Purpose=EmailVerification` 若有多筆待處理 Token（如攻擊者與真正的信箱擁有者都各自送出過一次升級請求），**新產生的 Token 使前面所有未使用的同用途 Token 失效**（`UsedAt` 直接標記，不再可驗證），避免舊連結事後被誤點造成密碼被覆蓋成攻擊者當初提交的那一組。
+5. `POST /api/v1/identity/register` 在此情境下的回應與全新註冊不同（不回傳可登入的 Token，僅提示「請至信箱完成驗證」）——這會讓攻擊者間接得知「這個 Email 已經買過東西」，但這比讓攻擊者直接拿到訂單歷史的風險低得多，本文件視為可接受的取捨，不做進一步遮蔽。
 
 **忘記密碼**：`POST /api/v1/identity/forgot-password` 產生 `AccountActionToken`（`Purpose=PasswordReset`，1 小時有效）並寄出重設連結；**無論該 Email 是否存在對應帳號，一律回傳相同的成功訊息**，避免帳號列舉攻擊（呼應 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 既有的暴力破解/列舉防護原則）。`POST /api/v1/identity/reset-password` 驗證 Token 有效且未使用/未過期後更新 `PasswordHash`，Token 標記為已使用，並**同時撤銷該使用者所有現有 Refresh Token**（密碼重設後強制所有裝置重新登入，屬安全常規）。
 
@@ -77,4 +93,4 @@
 - [x] ~~Refresh Token 與撤銷機制（目前只發 Access Token，過期後需重新登入）~~——**已解決**：見 §5.1（Access + Refresh 雙 Token、輪替機制、`RefreshToken` 實體）
 - [ ] LINE / Google OAuth 實際串接時程
 - [ ] §5.1 的登入/Refresh Token/密碼重設機制文字上聚焦「消費者會員」，但機制本身是 Identity Service 對所有 `Role` 共用（`Seller`/`SellerStaff` 同樣是 `PasswordHash` 登入），僅 `register` 端點限定 `Role=Buyer`——適用範圍需要更明確的書面澄清，避免誤讀成只服務買家（見 [10-gap-analysis.md](10-gap-analysis.md) §14）
-- [ ] **訪客升級為會員時，歷史訂單「自動關聯」是否要等信箱驗證通過才生效**：目前 §5.1 只設計了一般註冊的驗證流程，未涵蓋訪客升級這個特殊路徑，若不等驗證即關聯，存在帳號/訂單歷史冒領風險，詳見 [07-storefront-requirements.md](07-storefront-requirements.md) §5、[10-gap-analysis.md](10-gap-analysis.md) §14
+- [x] ~~訪客升級為會員時，歷史訂單「自動關聯」是否要等信箱驗證通過才生效~~——**已解決**（使用者 2026-09-09 確認：要等驗證通過）：見 §5.1「訪客升級為會員」，沿用同一 `User.Id`（訂單本來就指向它，不需搬移），密碼暫存於 `AccountActionToken.PendingPasswordHash`，驗證通過那一刻才寫入 `User.PasswordHash`、帳號才能登入
