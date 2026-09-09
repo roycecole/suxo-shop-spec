@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)、[09-api-specification.md](09-api-specification.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第七輪跨文件複查發現：[30-open-decisions-register.md](30-open-decisions-register.md) 一直假設本服務有「Saga 補償失敗」待決議項（§1 前 10 名、§6 重複項目都引用了 §6 的這個項目），但本文件實際上從未寫過，屬於遺漏；本次補上 |
+| v0.3 | 2026-09-09 | ordinarycas | §6 Saga 補償失敗待決議項標記已解決，統一設計見 [17-service-order.md](17-service-order.md) §4.1 |
 
 ## 1. 職責
 
@@ -45,4 +46,4 @@
 - [ ] 多倉支援：目前模型未區分「爸芭樂是否有多個實體倉庫」，若未來有多倉需求需加 `WarehouseId` 維度
 - [ ] 效期商品的自動下架/促銷：目前只記錄有效期，沒有自動化流程
 - [ ] Catalog 呼叫本服務失敗時，前台商品頁該顯示「查詢中」還是「暫時隱藏庫存」，降級行為未定義
-- [ ] Saga 補償失敗的最終處理與告警機制：`POST /internal/v1/wms/reservations/{id}/release`（結帳失敗時的補償呼叫）本身若失敗，`StockReservation.Released` 會卡在未釋放狀態，目前沒有重試/告警設計——與 [17-service-order.md](17-service-order.md) §6、[16-service-promotions.md](16-service-promotions.md) §5 是同一類尚待統一解決的問題，不建議本服務自行另立一套
+- [x] ~~Saga 補償失敗的最終處理與告警機制：`POST /internal/v1/wms/reservations/{id}/release`（結帳失敗時的補償呼叫）本身若失敗，`StockReservation.Released` 會卡在未釋放狀態，目前沒有重試/告警設計~~——**已解決**：統一設計見 [17-service-order.md](17-service-order.md) §4.1（`SagaCompensationFailure` 實體＋指數退避重試＋人工介入端點），`StockReservation.Released=false` 即為該設計所稱的「卡住狀態」，由 Order Service 端追蹤重試與升級，本服務不需另立一套

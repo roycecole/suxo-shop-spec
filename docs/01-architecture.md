@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | **使用者推翻 v0.1 設計**：確認 ShyeCMS 不與任何客戶平台連接。整份文件改寫，原本的架構圖、控制平面/資料平面劃分、功能開關查詢流程、用量彙總拉取流程全數移除，改為說明「零連接」的邊界與其後果 |
 | v0.3 | 2026-09-08 | ordinarycas | 關係圖改用 Mermaid 繪製 |
 | v0.4 | 2026-09-08 | ordinarycas | §3 具體定義功能開關落地的實際存放位置與命名慣例（先前只有原則性的一句話，[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §9 同步更新），解決 [10-gap-analysis.md](10-gap-analysis.md) §13 已列的「文件互相引用但沒有一處真正說清楚」的缺口 |
+| v0.5 | 2026-09-09 | ordinarycas | §3 repo 更名 `ecommerce-deploy-<客戶代稱>`→`ecommerce-launch-<客戶代稱>`，呼應實際 checkout 的資料夾命名（見 [26-project-structure.md](26-project-structure.md)） |
 
 ## 1. 為什麼原本的設計被推翻
 
@@ -46,7 +47,7 @@ ShyeCMS 裡的 `ClientFeatureEntitlement`（見 [02-data-model.md](02-data-model
 
 **實際落地方式**：維運人員在幫客戶開通或調整環境時，依 ShyeCMS 裡記錄的合約內容，**手動修改該客戶環境自己的設定檔/環境變數**。這個過程是人工的，ShyeCMS 不會、也不能自動把設定推送到客戶環境。
 
-**具體存放位置與格式**：這些屬於「合約層級的功能開關」（決定某功能在這個客戶部署裡整個開不開放，不是賣家自己的營運選項——後者是 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 的 `StoreSettings`，兩者是不同層級，見該文件的說明），統一以環境變數存放在 `ecommerce-deploy-<客戶代稱>` repo（見 [26-project-structure.md](26-project-structure.md) §3.4）的 `.env` 檔案裡，命名慣例 `FEATUREFLAGS__<FlagName>`（雙底線對應 ASP.NET Core `IConfiguration` 的階層式綁定，如 `FEATUREFLAGS__COUPONMODULE=true`），透過 `docker-compose.yml` 的 `env_file` 注入到需要判斷該開關的服務容器。**不放在各服務自己的 `appsettings.{Environment}.json`**——那個檔案隨原始碼一起 commit 進 `ecommerce-services` repo，若把客戶差異寫在裡面，等於要為每個客戶各自建置不同的映像檔，牴觸「同一份映像檔靠環境變數部署到任何客戶」的既有原則（比照 [06](06-ecommerce-platform-architecture.md) §5 Next.js Route Handler 對 API 位址的處理方式，同一套邏輯用在功能開關上）。`.env` 本身依 [26](26-project-structure.md) §3.4 既有慣例不進版控。
+**具體存放位置與格式**：這些屬於「合約層級的功能開關」（決定某功能在這個客戶部署裡整個開不開放，不是賣家自己的營運選項——後者是 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 的 `StoreSettings`，兩者是不同層級，見該文件的說明），統一以環境變數存放在 `ecommerce-launch-<客戶代稱>` repo（見 [26-project-structure.md](26-project-structure.md) §3.4）的 `.env` 檔案裡，命名慣例 `FEATUREFLAGS__<FlagName>`（雙底線對應 ASP.NET Core `IConfiguration` 的階層式綁定，如 `FEATUREFLAGS__COUPONMODULE=true`），透過 `docker-compose.yml` 的 `env_file` 注入到需要判斷該開關的服務容器。**不放在各服務自己的 `appsettings.{Environment}.json`**——那個檔案隨原始碼一起 commit 進 `ecommerce-services` repo，若把客戶差異寫在裡面，等於要為每個客戶各自建置不同的映像檔，牴觸「同一份映像檔靠環境變數部署到任何客戶」的既有原則（比照 [06](06-ecommerce-platform-architecture.md) §5 Next.js Route Handler 對 API 位址的處理方式，同一套邏輯用在功能開關上）。`.env` 本身依 [26](26-project-structure.md) §3.4 既有慣例不進版控。
 
 ## 4. 這個決策放棄了什麼（誠實記錄取捨）
 

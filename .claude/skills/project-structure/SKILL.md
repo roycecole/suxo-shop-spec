@@ -1,6 +1,6 @@
 ---
 name: project-structure
-description: "查詢完整的 repo 結構：6 個 repo（shyecms-api/shyecms-admin/ecommerce-services/ecommerce-storefront/ecommerce-admin/ecommerce-deploy）各自的資料夾樹狀圖與部署單位。"
+description: "查詢完整的 repo 結構：6 個 repo（shyecms-api/shyecms-admin/ecommerce-services/ecommerce-storefront/ecommerce-admin/ecommerce-launch）各自的資料夾樹狀圖與部署單位。"
 ---
 
 # 26 - 專案結構 (Project Structure)

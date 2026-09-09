@@ -18,6 +18,7 @@
 | v0.13 | 2026-09-08 | ordinarycas | §7 結帳 Saga 補上查詢 Vendor Service 抽成費率的步驟，與 [17-service-order.md](17-service-order.md) §4 v0.2 同步，解決 `SubOrder.CommissionAmount` 計算來源未定義的問題（見 [10-gap-analysis.md](10-gap-analysis.md) §11） |
 | v0.14 | 2026-09-08 | ordinarycas | §9 同步 [01-architecture.md](01-architecture.md) §3 v0.4 的具體決定：功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-deploy-<客戶代稱>` 的 `.env`，解決 [10-gap-analysis.md](10-gap-analysis.md) §13 已列的缺口 |
 | v0.15 | 2026-09-09 | ordinarycas | §2 新增「主題模式」決策列：前台+後台皆支援深色/淺色模式、**預設淺色**、不跟隨系統偏好（使用者指定）；同時記錄前台首頁多語系（繁中/英/日）已依 [28-i18n.md](28-i18n.md) §2/§4 於實作 repo 落地（型別化字典＋fallback 繁中，正式 i18n 函式庫選型仍開放） |
+| v0.16 | 2026-09-09 | ordinarycas | §6.1、§9 repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名（見 [26-project-structure.md](26-project-structure.md)） |
 
 ## 0. 定位聲明
 
@@ -163,7 +164,7 @@ graph TB
 
 ### 6.1 部署拓樸：單一虛擬主機
 
-預期客戶（如爸芭樂）只會有**一台虛擬主機**，前台、賣家後台、所有微服務都跑在這一台機器上，以 Docker Compose 管理，一行指令啟動。這台主機上實際 clone 的是 `ecommerce-deploy` repo（見 [26-project-structure.md](26-project-structure.md) §3.4），裡面的 `docker-compose.yml` 引用其餘三個 repo（`ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin`）各自建置好、推上私有映像檔倉庫的版本標籤，客戶主機本身不需要 clone 任何一份原始碼。這代表：
+預期客戶（如爸芭樂）只會有**一台虛擬主機**，前台、賣家後台、所有微服務都跑在這一台機器上，以 Docker Compose 管理，一行指令啟動。這台主機上實際 clone 的是 `ecommerce-launch` repo（見 [26-project-structure.md](26-project-structure.md) §3.4），裡面的 `docker-compose.yml` 引用其餘三個 repo（`ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin`）各自建置好、推上私有映像檔倉庫的版本標籤，客戶主機本身不需要 clone 任何一份原始碼。這代表：
 
 - 14 個領域服務 + Gateway（見 §4，共 15 個服務）+ 前台 Next.js（需要 Node 執行環境，非純靜態）全部是同一台主機上的容器，**沒有跨機器的服務發現需求**（docker-compose 內建的服務名稱 DNS 即足夠，不需要 service registry/mesh）。
 - 資源評估明確是**同一台主機**的問題，不是「多機器如何分配」的問題——這把 [10-gap-analysis.md](10-gap-analysis.md) §3 已列的「服務數量在單一客戶部署下的資源消耗」從抽象疑慮變成具體的**主機規格問題**，需要在正式報價/建置 SOP 前給出最低建議規格（見 §6.3）。
@@ -287,7 +288,7 @@ sequenceDiagram
 ## 9. 與 ShyeCMS 的關係（重申決策 C）
 
 - 這套平台的**任何一行程式碼**都不會呼叫 ShyeCMS。
-- 功能開關（例如「是否開放貨到付款」「是否啟用優惠券模組」）在此平台內以**環境變數**（`FEATUREFLAGS__<FlagName>`，存放在 `ecommerce-deploy-<客戶代稱>` repo 的 `.env`）表示，部署當下由維運人員依 ShyeCMS 裡的合約紀錄手動填入，執行期不做任何外部查詢，具體存放位置與命名慣例見 [01-architecture.md](01-architecture.md) §3。這是**合約層級**的主開關（決定某功能在這個客戶部署裡整個開不開放），與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己在 `StoreSettings` 決定「目前要不要用」是不同層級——主開關關閉時，`StoreSettings` 裡對應的選項即使賣家開著也不會生效。
+- 功能開關（例如「是否開放貨到付款」「是否啟用優惠券模組」）在此平台內以**環境變數**（`FEATUREFLAGS__<FlagName>`，存放在 `ecommerce-launch-<客戶代稱>` repo 的 `.env`）表示，部署當下由維運人員依 ShyeCMS 裡的合約紀錄手動填入，執行期不做任何外部查詢，具體存放位置與命名慣例見 [01-architecture.md](01-architecture.md) §3。這是**合約層級**的主開關（決定某功能在這個客戶部署裡整個開不開放），與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己在 `StoreSettings` 決定「目前要不要用」是不同層級——主開關關閉時，`StoreSettings` 裡對應的選項即使賣家開著也不會生效。
 - 用量統計（GMV、商品數等）留在自己的 Analytics Service 內供賣家/平台後台檢視，**不會**、也沒有機制回傳給拾夜科技（決策 D）。
 
 ## 10. 待決議事項

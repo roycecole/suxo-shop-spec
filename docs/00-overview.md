@@ -15,6 +15,7 @@
 | v0.10 | 2026-09-08 | ordinarycas | 回應「預期資料夾目錄結構」需求：[26-project-structure.md](26-project-structure.md) 補上兩個 repo 的實際樹狀圖、服務內部分層慣例、共用函式庫落地位置，並解決 `.sln`/`packages/api-client` 兩項既有待決議 |
 | v0.11 | 2026-09-08 | ordinarycas | 新增決策 H：React 前端獨立成自己的 repo、前台後台也彼此分開，共用邏輯改為版本化套件而非專案參照——推翻 v0.10 的部分結構決定，repo 數量由 2 個變成 6 個；同時採納使用者對「共用 `.sln`」的質疑，取消單一 `.sln` 設計 |
 | v0.12 | 2026-09-08 | ordinarycas | 回應「待決議事項」需求：新增 [30-open-decisions-register.md](30-open-decisions-register.md) 彙整全部 29 份文件的 77 項待決議並排出優先處理前 10 名；修正 [16-service-promotions.md](16-service-promotions.md) 缺少待決議章節的疏漏；[28-i18n.md](28-i18n.md) 新增幣別/金流在地化的明確排除說明；釐清 [05-scope-and-open-items.md](05-scope-and-open-items.md) 的彙整範圍僅限 ShyeCMS |
+| v0.13 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名（見 [26-project-structure.md](26-project-structure.md)）；新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)（`shyecms-admin` 頁面/操作流程規格）並收錄進 §6 文件索引，解決 [10-gap-analysis.md](10-gap-analysis.md) §6 已列的最高優先缺口 |
 
 ## 1. 本文件集的緣起
 
@@ -48,7 +49,7 @@
 - **決策 E（電商平台技術棧）**：以「爸芭樂」案例設計的電商平台，直接以**微服務**架構規劃（不從單體架構演進，因為這是全新產品線的具體設計），技術棧固定為：後端 **C# / ASP.NET Core (.NET 10)**、前台 **React（須可生成靜態頁面，即 Next.js SSG/ISR）**、資料庫 **PostgreSQL**，部署拓樸為單一虛擬主機 + Docker Compose。詳見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)。
 - **決策 F（ShyeCMS 技術棧，新增）**：ShyeCMS 後端為 **C# / ASP.NET Core (.NET 10) 單體**（**不採微服務**——與電商平台的差異是刻意的：ShyeCMS 範疇是客戶/合約/訂閱等 CRUD 為主的內部管理，沒有跨服務交易的 Saga 需求，微服務化只會增加不必要的維運複雜度），前端為**獨立的 React SPA（Vite）**，與電商平台的賣家後台同技術棧；資料庫為獨立的 **PostgreSQL** 執行個體（與任何客戶的電商平台資料庫完全分開，呼應決策 C 的零連接原則）。詳見 [26-project-structure.md](26-project-structure.md)。
 - **決策 G（多語系範圍，新增）**：電商平台前台+後台須支援**繁體中文（預設）、英文、日文**，ShyeCMS 不在範圍內（維持繁中單一語系）。詳見 [28-i18n.md](28-i18n.md)。
-- **決策 H（Repo 拆分，取代決策 F 原本「2 個 repo」的說法）**：React 前端一律獨立成自己的 repo，不與後端放在一起；電商平台的前台（買家）與後台（賣家）也彼此獨立成兩個 repo，避免其中一邊的原始碼/建置產物意外牽涉到另一邊。實際變成 **6 個 repo**：`shyecms-api`、`shyecms-admin`、`ecommerce-services`（15 微服務）、`ecommerce-storefront`、`ecommerce-admin`、`ecommerce-deploy`（新增，統整前三者建置出的映像檔，是唯一實際 clone 到客戶 VPS 上的 repo）。詳見 [26-project-structure.md](26-project-structure.md)。
+- **決策 H（Repo 拆分，取代決策 F 原本「2 個 repo」的說法）**：React 前端一律獨立成自己的 repo，不與後端放在一起；電商平台的前台（買家）與後台（賣家）也彼此獨立成兩個 repo，避免其中一邊的原始碼/建置產物意外牽涉到另一邊。實際變成 **6 個 repo**：`shyecms-api`、`shyecms-admin`、`ecommerce-services`（15 微服務）、`ecommerce-storefront`、`ecommerce-admin`、`ecommerce-launch`（新增，統整前三者建置出的映像檔，是唯一實際 clone 到客戶 VPS 上的 repo）。詳見 [26-project-structure.md](26-project-structure.md)。
 
 ## 4. 名詞定義
 
@@ -78,6 +79,7 @@
 | [03-client-lifecycle.md](03-client-lifecycle.md) | 客戶從建檔、開通、營運到終止的生命週期流程（純商業/人工作業） |
 | [04-feature-entitlement-and-metering.md](04-feature-entitlement-and-metering.md) | **已停用設計**：v0.1 曾規劃的即時查詢/用量拉取機制，因 v0.2 決策 C、D 而廢止，保留於此供追溯 |
 | [05-scope-and-open-items.md](05-scope-and-open-items.md) | 本輪明確排除項目與待決議清單 |
+| [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) | `shyecms-admin` 頁面清單、操作流程、角色權限矩陣（內容屬 ShyeCMS，編號延續在 30 之後，見該文件開頭說明） |
 | [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) | 「爸芭樂」案例：獨立微服務電商平台架構，C# .NET 10 + React SSG + PostgreSQL |
 | [07-storefront-requirements.md](07-storefront-requirements.md) | 前台需求：免登入下單、LINE/Google 登入（保留） |
 | [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) | 賣家後台需求：上架/數據/版型/自家功能開關、拾夜科技 `PlatformSupportStaff` 支援權限 |
@@ -98,7 +100,7 @@
 | [23-service-notification.md](23-service-notification.md) | Notification Service：LINE 官方帳號整合 |
 | [24-service-reviews.md](24-service-reviews.md) | Reviews Service：商品評價 |
 | [25-service-gateway.md](25-service-gateway.md) | Open API Gateway：對外入口、金鑰驗證、速率限制 |
-| [26-project-structure.md](26-project-structure.md) | 完整 repo/專案結構：共 6 個 repo（含 `ecommerce-deploy` 部署設定），各自的資料夾樹狀圖與部署單位 |
+| [26-project-structure.md](26-project-structure.md) | 完整 repo/專案結構：共 6 個 repo（含 `ecommerce-launch` 部署設定），各自的資料夾樹狀圖與部署單位 |
 | [27-pwa-and-accessibility.md](27-pwa-and-accessibility.md) | RWD/PWA（前台+後台皆可安裝）與前台無障礙規範（WCAG 2.1 AA） |
 | [28-i18n.md](28-i18n.md) | 多語系支援：繁中/英/日，URL 路由策略，內容翻譯資料模型 |
 | [29-shared-service-conventions.md](29-shared-service-conventions.md) | 跨服務共通慣例與資安基準：Correlation ID、健康檢查、Markdown 管線、服務間認證、資安規則 |

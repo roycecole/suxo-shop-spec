@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`suxo-shop-spec` is a **specification-only repository** — it contains nothing but the `docs/` folder (31 Markdown files, written in Traditional Chinese). There is no source code, no build tooling, no package manifests. **There are no build/lint/test commands to run here.** Do not invent them.
+`suxo-shop-spec` is a **specification-only repository** — it contains nothing but the `docs/` folder (32 Markdown files, written in Traditional Chinese). There is no source code, no build tooling, no package manifests. **There are no build/lint/test commands to run here.** Do not invent them.
 
 The docs describe **two independent systems** designed by 拾夜科技有限公司 (ShyeTech):
 
-1. **ShyeCMS** (`docs/00`–`05`) — ShyeTech's own internal system for managing its clients: client records, subscription plans, contract/feature-entitlement records, deployment inventory. Clients have no login to it.
+1. **ShyeCMS** (`docs/00`–`05`, plus `docs/31` — see below) — ShyeTech's own internal system for managing its clients: client records, subscription plans, contract/feature-entitlement records, deployment inventory. Clients have no login to it.
 2. **The e-commerce platform** (`docs/06`–`30`), specced using "爸芭樂" (a guava shop) as the running example — the actual white-label product sold to and run independently by each client. Backend is C# / ASP.NET Core (.NET 10) microservices, storefront is Next.js (SSG/ISR), vendor admin is a Vite SPA, database is PostgreSQL.
 
 **These two systems have zero technical connection to each other** — no API calls, no shared credentials, no runtime dependency in either direction. This is a deliberate, explicitly-locked decision (see `01-architecture.md`), not an oversight: ShyeCMS never queries a client's platform, and a client's platform never calls ShyeCMS. Feature entitlements recorded in ShyeCMS are a *contractual/business record only* — actually enabling a feature on a client's deployment is a manual config-file edit done by ops staff at deploy time, never an automated or runtime-verified sync. Don't propose adding any such connection without flagging that it contradicts a locked decision.
 
-Docs reference repos that **do not exist in this checkout** (e.g. `shyecms-api`, `ecommerce-services`, `ecommerce-storefront`, `ecommerce-admin`, `ecommerce-deploy` — see `26-project-structure.md`). Treat any file path or namespace mentioned in the docs (e.g. `SuxoShop.Catalog.Domain`, `ShyeCMS.Application`) as describing a sibling/downstream implementation repo, not something to locate or edit here. If a task asks you to "implement" something from these docs, check with the user whether they mean editing the spec itself or whether they expect a separate codebase to exist.
+Docs reference repos that **do not exist in this checkout** (e.g. `shyecms-api`, `ecommerce-services`, `ecommerce-storefront`, `ecommerce-admin`, `ecommerce-launch` — see `26-project-structure.md`). Treat any file path or namespace mentioned in the docs (e.g. `SuxoShop.Catalog.Domain`, `ShyeCMS.Application`) as describing a sibling/downstream implementation repo, not something to locate or edit here. If a task asks you to "implement" something from these docs, check with the user whether they mean editing the spec itself or whether they expect a separate codebase to exist.
 
 Work in this repo is almost always: reading, writing, or restructuring the Markdown specs themselves.
 
@@ -33,6 +33,7 @@ Start from `docs/00-overview.md` §6 for the authoritative index. Roughly:
 | `03-client-lifecycle.md` | Client onboarding → operation → termination lifecycle (manual/business process) |
 | `04-feature-entitlement-and-metering.md` | **Deprecated design** — the v0.1 live-query/usage-pull mechanism, superseded by the zero-connection decision; kept for history |
 | `05-scope-and-open-items.md` | Explicit exclusions and open items — **scoped to ShyeCMS only** (`00`–`05`); platform-side items are in `30` |
+| `31-shyecms-frontend-requirements.md` | `shyecms-admin` page list, staff workflows, role-permission matrix — content-wise part of ShyeCMS, but numbered after `30` since `06`–`30` were already taken by the platform docs by the time it was written (see the file's own header note) |
 
 **E-commerce platform ("爸芭樂" case), microservices architecture:**
 
@@ -62,7 +63,7 @@ Start from `docs/00-overview.md` §6 for the authoritative index. Roughly:
 | `27-pwa-and-accessibility.md` | RWD/PWA (storefront + admin) and WCAG 2.1 AA (storefront only) |
 | `28-i18n.md` | zh-TW (default) / EN / JA — URL routing, translation data model |
 | `29-shared-service-conventions.md` | Rules **all 15 services must follow**: correlation ID, health-check endpoints, structured logging, shared Markdown-sanitization pipeline, inter-service auth, security baseline |
-| `30-open-decisions-register.md` | Index of all 77 open items across every doc, top-10 prioritized — index only, edit the source doc, not this file |
+| `30-open-decisions-register.md` | Index of open items across every doc (70 as of last sync — check the file's own stats line, it changes as items resolve), top-5/top-10 prioritized — index only, edit the source doc, not this file |
 
 Cross-references between docs use relative Markdown links — keep these valid when renaming or moving files.
 
@@ -85,7 +86,7 @@ Cross-references between docs use relative Markdown links — keep these valid w
 - **ShyeTech never ingests client business data** — no product, pricing, member, or even aggregated usage data flows from a client's platform back to ShyeTech. GMV-overage billing therefore has no data source and is an explicitly accepted open gap, not something to silently design around.
 - **The e-commerce platform is greenfield microservices, not a monolith-first evolution** — 14 domain services + Open API Gateway, each with its own PostgreSQL schema, no direct cross-service table access, sync REST only (no message queue — deliberate, given expected single-client traffic scale).
 - **Single VPS + Docker Compose per client deployment**, not multi-tenant SaaS — each client gets one virtual host running everything via `docker compose up -d`. DB connection is one of three interchangeable modes (Docker-internal Postgres / external managed, Supabase preferred / internal client-hosted Postgres), selected by env var, never hardcoded.
-- **6 separate repos, not a monorepo**: `shyecms-api`, `shyecms-admin`, `ecommerce-services` (15 services + shared libs), `ecommerce-storefront`, `ecommerce-admin`, `ecommerce-deploy` (per-client deploy config, the only repo actually cloned onto a client VPS). Shared logic crosses repo boundaries only as versioned packages (NuGet / npm), never `ProjectReference`/monorepo path imports — this was a deliberate reversal of an earlier "shared `.sln`" design, kept precisely so services can upgrade independently.
+- **6 separate repos, not a monorepo**: `shyecms-api`, `shyecms-admin`, `ecommerce-services` (15 services + shared libs), `ecommerce-storefront`, `ecommerce-admin`, `ecommerce-launch` (per-client deploy config, the only repo actually cloned onto a client VPS). Shared logic crosses repo boundaries only as versioned packages (NuGet / npm), never `ProjectReference`/monorepo path imports — this was a deliberate reversal of an earlier "shared `.sln`" design, kept precisely so services can upgrade independently.
 - **Order Service is the checkout Saga orchestrator** across Cart → WMS → Promotions → Order → Payment, with synchronous REST calls and compensating actions on failure; Notification is fired asynchronously and never blocks the order.
 - **Inventory ownership lives in WMS Service, not Catalog** — Catalog is product/price display only. This correction from an earlier draft is called out explicitly in `06-ecommerce-platform-architecture.md` §7 step 2 — don't reintroduce stock fields into Catalog.
 - **API versioning is per-service, not platform-wide** (`/api/v{n}/...`, each service accrues its own version independently) — one service being on `v2` while another is still `v1` is expected, not a bug (`09-api-specification.md`).

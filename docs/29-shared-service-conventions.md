@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立，回應 [10-gap-analysis.md](10-gap-analysis.md) §1、§7 累積的多項缺口：跨服務共通慣例未定義、Markdown 處理管線各服務各自實作、資訊安全性需要正式收斂 |
 | v0.2 | 2026-09-08 | ordinarycas | §3 補充「各服務文件 API 大綱的讀法」統一約定，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的內部端點認證註記不一致疑慮——以本節為準，不需逐服務重複載明兩層防禦 |
+| v0.3 | 2026-09-09 | ordinarycas | 新增 §4.1：共用套件（`SuxoShop.Shared.*`）的資安修補強制升級窗口（7 個日曆天＋`[SECURITY]` Release Notes 標示＋人工追蹤清單，與一般版本更新的自由升級節奏區分），解決 [10-gap-analysis.md](10-gap-analysis.md) §9 已列的例外機制缺口 |
 
 > 本文件是 15 個微服務**都必須遵守**的共通規則，不是某一個服務的規格。凡是本文件定義過的慣例，各服務文件（[11](11-service-identity.md)–[25](25-service-gateway.md)）不重複定義，只在需要偏離慣例時特別註明。
 
@@ -76,6 +77,22 @@ string RenderMarkdownToSafeHtml(string markdown)
 | 高權限帳號 | ShyeCMS 的 `SuperAdmin`、電商平台的 `PlatformSupportStaff`（[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §4）**建議**強制 2FA，本輪列為待決議（見 §5），非本文件確定的硬性規定 |
 | 依賴套件掃描 | CI/CD（既有缺口）應納入 NuGet/npm 套件的已知漏洞掃描（如 `dotnet list package --vulnerable`、`npm audit`），定期執行而非只在導入套件當下檢查一次 |
 | 金流敏感資料 | 信用卡等資料不落地，交由金流商（[18-service-payment.md](18-service-payment.md)）Tokenization 處理，符合 PCI DSS 精神，本系統不儲存卡號 |
+
+### 4.1 共用套件（`SuxoShop.Shared.*`）的資安修補強制升級窗口
+
+[26-project-structure.md](26-project-structure.md) §4.2 把 `SuxoShop.Shared.*`（`Conventions`/`Markdown`/`Security`/`Translation`）改為版本化 NuGet 套件，讓各服務**自行決定何時升級**——這對一般版本更新是對的（保留獨立升級節奏，是決策 H 的核心用意），但**不該原封不動套用在資安修補上**：若某個共用套件修的是嚴重漏洞（如 `SuxoShop.Shared.Markdown` 的 XSS 漏洞），「各服務自行決定」代表某些服務可能長期不升級，§2、本節已建立的資安基準會被這個彈性架空。這是決策 H 為解決耦合問題而**新產生**的風險，需要一條明確的例外規則。
+
+**分級與強制升級窗口**：
+
+| 修補等級 | 判定標準 | 升級窗口 |
+|---|---|---|
+| 一般版本更新 | 不涉及已知安全漏洞的功能新增/修正 | 無強制窗口，各服務自行決定（維持既有彈性） |
+| 資安修補 | 修補內容涉及已知或懷疑的安全漏洞（不論是否已取得正式 CVE 編號——內部發現的漏洞同樣適用，不能以「還沒申請 CVE」為由降級處理） | **7 個日曆天內**，所有直接依賴該套件的服務須完成升級並重新部署 |
+
+**發布與追蹤（人工流程，非自動化機制）**：
+- 資安修補版本的 NuGet 套件 Release Notes **必須**以 `[SECURITY]` 前綴標示，與一般版本更新的說明分開，方便掃過變更記錄即可辨識。
+- 套件維護者發布 `[SECURITY]` 版本時，須建立一份追蹤清單，列出所有已知依賴該套件的服務（依 [26-project-structure.md](26-project-structure.md) §3.1 的 `shared/` 套件清單與各服務的套件參照回推），逐一勾選完成升級，直到全部勾完才算這次修補流程結束。這目前是唯一的強制手段，依賴人工執行——自動化（如 CI 擋下未升級到安全版本的服務）需要等 CI/CD 策略定案，見既有缺口（[10-gap-analysis.md](10-gap-analysis.md) §3）。
+- **升級被阻擋時不能沉默逾期**：若某服務因修補版本含破壞性變更（Breaking Change）無法在 7 天內完成正式升級，須在同一個窗口內採取暫時緩解措施（如額外輸入驗證、暫時停用受影響功能），並在下一個發布週期內完成真正的套件升級，緩解措施與完成時程同樣記錄在追蹤清單，不能只升級不記錄或只記錄不升級。
 
 ## 5. 待決議事項
 - [ ] 高權限帳號（SuperAdmin、PlatformSupportStaff）是否強制 2FA，及採用哪種方式（TOTP/簡訊）

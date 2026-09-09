@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | **推翻 v0.2 的部分決策**：(1) React 前端一律獨立成自己的 repo，不跟後端放一起；(2) 電商平台的前台（買家）與後台（賣家）也彼此獨立成兩個 repo，避免其中一邊的原始碼/排版被另一邊的建置產物意外帶到；(3) 重新檢視「15 個服務共用一個 `.sln`」的維運風險並推翻，改為服務各自獨立、共用邏輯改用版本化套件而非專案參照。因應 repo 數量增加，新增 `ecommerce-deploy` 部署設定 repo 統整多個 repo 建置出的映像檔 |
 | v0.4 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第八輪複查發現：§3.1 `services/identity/` 的範例底下複製貼上時忘了改，命名空間誤植為 `SuxoShop.Catalog.*`，已訂正為 `SuxoShop.Identity.*` |
 | v0.5 | 2026-09-09 | ordinarycas | §3.3 `ecommerce-admin/features/` 補上 promotions/shipping/reviews 三個資料夾，同步 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) v0.5 已新增的三個賣家後台功能（實作 repo 已依 08 建了 10 個 features 資料夾，本文件範本至此對齊） |
+| v0.6 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名；§2.2 `shyecms-admin/features/` 補上 `staff/` 模組並確認先前的猜測樹狀圖、§7 標記 ShyeCMS 前端需求規格待決議項已解決——皆同步新增的 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) |
 
 > 本文件回答「總共會有哪些 repo、各自資料夾長什麼樣子」。
 
@@ -20,7 +21,7 @@
 | `ecommerce-services` | 電商平台 15 個微服務 + 共用 .NET 函式庫 | 逐客戶部署（映像檔） |
 | `ecommerce-storefront` | 電商平台前台（Next.js，買家使用） | 逐客戶部署（映像檔） |
 | `ecommerce-admin` | 電商平台後台（Vite SPA，賣家使用） | 逐客戶部署（映像檔） |
-| `ecommerce-deploy` | 電商平台部署設定（docker-compose + 版本標籤，見 §4） | 逐客戶 clone 到各自 VPS |
+| `ecommerce-launch` | 電商平台部署設定（docker-compose + 版本標籤，見 §4） | 逐客戶 clone 到各自 VPS |
 
 **為什麼從原本的「2 個 repo」變成「6 個 repo」**：v0.1/v0.2 曾把前後端放在同一個 repo 裡（如 `ShyeCMS Repo` 內同時放 `shyecms-api` 和 `shyecms-admin`；電商平台的 `apps/storefront`、`apps/admin`、`services/*` 全部塞進一個 monorepo）。使用者提出兩點理由後推翻此設計：
 1. **React 前端本來就該獨立**：前端團隊不需要 checkout 後端程式碼，反之亦然，職責邊界應該用 repo 邊界具體落實，而不是只靠資料夾分開。
@@ -55,7 +56,8 @@ shyecms-admin/
 │   │   ├── subscriptions/            訂閱方案指派與調整
 │   │   ├── entitlements/             功能授權（合約紀錄）調整
 │   │   ├── deployments/              客戶部署盤點紀錄
-│   │   └── audit-log/                StaffUser 操作稽核查詢
+│   │   ├── audit-log/                StaffUser 操作稽核查詢
+│   │   └── staff/                    內部人員（StaffUser）管理，見 31-shyecms-frontend-requirements.md §10
 │   ├── components/
 │   ├── api/                          呼叫 shyecms-api 的型別化 Client（透過環境變數指向 API 網址，不寫死）
 │   └── main.tsx
@@ -63,7 +65,7 @@ shyecms-admin/
 └── vite.config.ts
 ```
 
-> **`features/*` 是依現有資料模型（[02-data-model.md](02-data-model.md)）反推的最小合理猜測，不是正式規格**——[10-gap-analysis.md](10-gap-analysis.md) §6 已指出 ShyeCMS 前端頁面/操作流程規格完全空白，待該缺口補上後需要回頭核對資料夾是否需要調整。
+> **`features/*` 已依 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) §3 確認**（先前是依現有資料模型反推的猜測，該文件已補上完整頁面/操作流程規格）——新增 `staff/` 模組對應內部人員管理（31 §10），其餘 5 個模組維持不變。
 
 兩個 repo 之間透過 API 溝通（`shyecms-admin` 呼叫 `shyecms-api`），**不共用程式碼、不共用建置流程**。拾夜科技只需要自己內部知道兩個服務的網址對應關係即可，因為只有一份實例，不像電商平台需要 §4 那種「多 repo 映像檔組裝」的正式流程。
 
@@ -151,10 +153,10 @@ ecommerce-admin/
 
 `ecommerce-storefront` 與 `ecommerce-admin` 除了都透過 Open API Gateway 呼叫後端之外，**沒有任何共用的原始碼目錄、沒有共用的建置設定**，唯一共用的是 §5.3 的 `api-client` 版本化套件（透過 npm registry 安裝，不是檔案系統上的共用資料夾）。
 
-### 3.4 `ecommerce-deploy`（新增：部署設定，實際 clone 到客戶 VPS 的是這個）
+### 3.4 `ecommerce-launch`（新增：部署設定，實際 clone 到客戶 VPS 的是這個）
 
 ```
-ecommerce-deploy/
+ecommerce-launch/
 ├── docker-compose.yml                引用其他三個 repo 各自建置好的映像檔（見範例）
 ├── .env.example
 └── README.md                         SOP：如何在新客戶 VPS 上部署、如何更新版本
@@ -177,11 +179,11 @@ services:
     image: postgres:17
 ```
 
-**為什麼需要這第 4 個 repo**：把前台/後台/15 個服務拆成 3 個獨立 repo 後，**沒有任何一個 repo 天生知道「這一整套要怎麼一起啟動」**——`ecommerce-services` 只知道自己的 15 個服務，不會、也不該知道前端的存在。`ecommerce-deploy` 是唯一橫跨全部的角色：只放組裝用的 compose 設定與版本標籤，不放任何一行應用程式邏輯。更新客戶版本＝改這個 repo 裡的映像檔標籤，`git pull` + `docker compose pull && docker compose up -d`，不需要在客戶 VPS 上 clone 三份原始碼。
+**為什麼需要這第 4 個 repo**：把前台/後台/15 個服務拆成 3 個獨立 repo 後，**沒有任何一個 repo 天生知道「這一整套要怎麼一起啟動」**——`ecommerce-services` 只知道自己的 15 個服務，不會、也不該知道前端的存在。`ecommerce-launch` 是唯一橫跨全部的角色：只放組裝用的 compose 設定與版本標籤，不放任何一行應用程式邏輯。更新客戶版本＝改這個 repo 裡的映像檔標籤，`git pull` + `docker compose pull && docker compose up -d`，不需要在客戶 VPS 上 clone 三份原始碼。
 
-**每個客戶各自一份，不是一個 repo 服務所有客戶**：`ecommerce-deploy` 沿用其餘電商平台 repo「每個客戶各自一份拷貝」的白牌慣例，做法是把它當**範本 repo**，新客戶上線時複製成 `ecommerce-deploy-<客戶代稱>`（如 `ecommerce-deploy-babaguava`），各自維護自己的映像檔版本標籤與 `.env`。這樣客戶 A 停在 `catalog:1.8.2`、客戶 B 已升到 `1.9.0`，兩份 `ecommerce-deploy-*` 互不影響——不會因為拆成多 repo 反而變成「所有客戶被迫同時升級」。
+**每個客戶各自一份，不是一個 repo 服務所有客戶**：`ecommerce-launch` 沿用其餘電商平台 repo「每個客戶各自一份拷貝」的白牌慣例，做法是把它當**範本 repo**，新客戶上線時複製成 `ecommerce-launch-<客戶代稱>`（如 `ecommerce-launch-babaguava`），各自維護自己的映像檔版本標籤與 `.env`。這樣客戶 A 停在 `catalog:1.8.2`、客戶 B 已升到 `1.9.0`，兩份 `ecommerce-launch-*` 互不影響——不會因為拆成多 repo 反而變成「所有客戶被迫同時升級」。
 
-**機密資訊不進版控**：`.env.example` 只列出需要哪些變數（DB 連線字串、`Jwt:SigningKey` 等），**實際的 `.env`（含真實密鑰/密碼）不 commit 進 `ecommerce-deploy-<客戶代稱>`**，比照 [03-client-lifecycle.md](03-client-lifecycle.md) §3 既有的「新客戶上線 SOP」（環境建置 → 資料庫初始化 → ...）由維運人員在客戶 VPS 上手動建立，`.gitignore` 排除 `.env`。
+**機密資訊不進版控**：`.env.example` 只列出需要哪些變數（DB 連線字串、`Jwt:SigningKey` 等），**實際的 `.env`（含真實密鑰/密碼）不 commit 進 `ecommerce-launch-<客戶代稱>`**，比照 [03-client-lifecycle.md](03-client-lifecycle.md) §3 既有的「新客戶上線 SOP」（環境建置 → 資料庫初始化 → ...）由維運人員在客戶 VPS 上手動建立，`.gitignore` 排除 `.env`。
 
 ## 4. 共用邏輯的處理方式（因應 repo 拆分調整）
 
@@ -225,11 +227,11 @@ services:
 | `ecommerce-admin` | 1 |
 | **總計相異部署單位** | **19**（與 v0.2 相同，只是現在分散在 6 個 repo 而非 2 個） |
 
-`ecommerce-deploy` 不含任何應用程式部署單位，只是組裝設定，不計入上表。`ecommerce-services` 內的 4 個 `SuxoShop.Shared.*` 與 `api-client` 套件同理不計入（見 §4.2、§4.3，兩者都是版本化套件，不是獨立部署的容器）。
+`ecommerce-launch` 不含任何應用程式部署單位，只是組裝設定，不計入上表。`ecommerce-services` 內的 4 個 `SuxoShop.Shared.*` 與 `api-client` 套件同理不計入（見 §4.2、§4.3，兩者都是版本化套件，不是獨立部署的容器）。
 
 ## 7. 待決議事項
-- [ ] ShyeCMS 的前端需求規格尚未撰寫（[10-gap-analysis.md](10-gap-analysis.md) §6 已列為最高優先缺口）
+- [x] ~~ShyeCMS 的前端需求規格尚未撰寫~~——**已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，比照 [07](07-storefront-requirements.md)/[08](08-vendor-admin-requirements.md) 的規格深度，§2.2 的 `features/*` 樹狀圖已同步更新
 - [ ] 私有 NuGet feed 與私有 npm registry 的實際服務選型（如 Azure Artifacts、GitHub Packages、自架 Verdaccio/BaGet）尚未決定
-- [ ] 6 個 repo 各自的 CI/CD 都尚未定案，且現在比 v0.2 的「2 個 repo 各自 CI/CD」更分散，需要一份跨 repo 的版本發布 SOP（哪個 repo 發新版後，`ecommerce-deploy` 何時、由誰更新映像檔標籤）
-- [ ] `ecommerce-deploy` 的版本標籤更新是人工修改 YAML 後 commit，還是要做成自動化（如各 repo CI 發版後自動開 PR 更新 `ecommerce-deploy`）
+- [ ] 6 個 repo 各自的 CI/CD 都尚未定案，且現在比 v0.2 的「2 個 repo 各自 CI/CD」更分散，需要一份跨 repo 的版本發布 SOP（哪個 repo 發新版後，`ecommerce-launch` 何時、由誰更新映像檔標籤）
+- [ ] `ecommerce-launch` 的版本標籤更新是人工修改 YAML 後 commit，還是要做成自動化（如各 repo CI 發版後自動開 PR 更新 `ecommerce-launch`）
 - [ ] `services/*/Dockerfile` 的實際內容（multi-stage build、基礎映像檔版本）尚未撰寫
