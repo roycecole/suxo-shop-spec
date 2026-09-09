@@ -1,0 +1,10 @@
+# 巢狀的實作 repo（各自有獨立 .git，見 docs/26-project-structure.md 的 6-repo 拆分）——
+# 不屬於本規格 repo 的版控範圍，避免被誤加成 gitlink。
+ecommerce-admin/
+ecommerce-launch/
+ecommerce-services/
+ecommerce-storefront/
+shyecms-admin/
+shyecms-api/
+
+.DS_Store
