@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第八輪複查發現：§3.1 `services/identity/` 的範例底下複製貼上時忘了改，命名空間誤植為 `SuxoShop.Catalog.*`，已訂正為 `SuxoShop.Identity.*` |
 | v0.5 | 2026-09-09 | ordinarycas | §3.3 `ecommerce-admin/features/` 補上 promotions/shipping/reviews 三個資料夾，同步 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) v0.5 已新增的三個賣家後台功能（實作 repo 已依 08 建了 10 個 features 資料夾，本文件範本至此對齊） |
 | v0.6 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名；§2.2 `shyecms-admin/features/` 補上 `staff/` 模組並確認先前的猜測樹狀圖、§7 標記 ShyeCMS 前端需求規格待決議項已解決——皆同步新增的 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) |
+| v0.7 | 2026-09-09 | ordinarycas | §7 標記 `services/*/Dockerfile` 待決議項已解決：`ecommerce-services` 已統一撰寫同構的 multi-stage Dockerfile 並通過全服務 docker compose 啟動實測，回應「將待決議事項列出來實作」需求 |
 
 > 本文件回答「總共會有哪些 repo、各自資料夾長什麼樣子」。
 
@@ -234,4 +235,4 @@ services:
 - [ ] 私有 NuGet feed 與私有 npm registry 的實際服務選型（如 Azure Artifacts、GitHub Packages、自架 Verdaccio/BaGet）尚未決定
 - [ ] 6 個 repo 各自的 CI/CD 都尚未定案，且現在比 v0.2 的「2 個 repo 各自 CI/CD」更分散，需要一份跨 repo 的版本發布 SOP（哪個 repo 發新版後，`ecommerce-launch` 何時、由誰更新映像檔標籤）
 - [ ] `ecommerce-launch` 的版本標籤更新是人工修改 YAML 後 commit，還是要做成自動化（如各 repo CI 發版後自動開 PR 更新 `ecommerce-launch`）
-- [ ] `services/*/Dockerfile` 的實際內容（multi-stage build、基礎映像檔版本）尚未撰寫
+- [x] ~~`services/*/Dockerfile` 的實際內容（multi-stage build、基礎映像檔版本）尚未撰寫~~——**已解決**：`ecommerce-services` 的 15 個服務已統一撰寫同構的 multi-stage Dockerfile（build stage `mcr.microsoft.com/dotnet/sdk:10.0`、runtime stage `mcr.microsoft.com/dotnet/aspnet:10.0`，僅服務名/埠號不同），build context 一律 repo 根目錄（因 `shared/` 以 ProjectReference 引用，見 §4.2），已全部通過 `docker build` 與 `docker compose up` 全服務啟動實測（`/health/live`+`/health/ready` 全數 200）

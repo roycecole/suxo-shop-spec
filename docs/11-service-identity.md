@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增 2 項待決議——§5.1 適用範圍是否涵蓋 Seller/SellerStaff 待書面澄清、訪客升級為會員的自動關聯時機與信箱驗證的交互未定義（帳號冒領風險） |
 | v0.5 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§5.1 新增「訪客升級為會員」設計——沿用同一 `User.Id`（訂單本來就指向它，不需搬移資料），密碼暫存於新增的 `AccountActionToken.PendingPasswordHash`，驗證通過才寫入 `User.PasswordHash`；`register` 端點依 Email 是否已是無密碼訪客帳號分兩種行為；§2 `AccountActionToken` 補上該欄位；§6 對應待決議項標記已解決 |
 | v0.6 | 2026-09-09 | ordinarycas | §5.1 Refresh Token 儲存位置一段更新為「已依此實作」（原為建議）：`ecommerce-services` 完成 8 個端點真實作、`ecommerce-storefront` 完成 httpOnly Cookie BFF 前台實作，均已通過瀏覽器/docker-compose 實測，回應「把消費者會員登入串起來」與「把已經做出來但規格沒寫的東西補回文件」需求 |
+| v0.7 | 2026-09-09 | ordinarycas | §5.1 開頭新增「適用範圍澄清」段落，明確 7/8 端點對 Buyer/Seller/SellerStaff 共用、僅 `register` 消費者限定；§6 對應待決議項標記已解決，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -57,6 +58,8 @@
 
 本節具體化「消費者會員登入」的完整流程，聚焦 Email + 密碼這條**必要**路徑（見 [07-storefront-requirements.md](07-storefront-requirements.md) §2）；LINE/Google 第三方登入維持**保留**狀態不變，本節不涉及。
 
+**適用範圍澄清（原文字聚焦消費者，容易誤讀成只服務買家）**：下方 8 個端點裡，只有 `register`（固定建立 `Role=Buyer`）是消費者專屬——賣家帳號不透過這個端點建立（見下方「註冊」段落最後一句）。**其餘 7 個端點（`login`/`refresh-token`/`logout`/`verify-email`/`resend-verification`/`forgot-password`/`reset-password`）是 Identity Service 對所有 `Role` 共用的機制**：`Seller`/`SellerStaff` 帳號同樣是 `PasswordHash` 登入、同樣核發 Access + Refresh Token、同樣能重設密碼——`ecommerce-services` 的實作本來就沒有另外為賣家設計一套登入機制，`login` 端點依 `User.Role` 決定要不要額外呼叫 Vendor Service 解析 `vendorId`（`Seller`/`SellerStaff` 才有），僅此而已，`ecommerce-services` 的 `LoginCommandHandler` 已是這樣實作。往後若要新增賣家專屬的登入限制（如強制 2FA、IP 白名單），改的是這 7 個端點的行為，不是另外新增一套「賣家登入」端點。
+
 **註冊**：`POST /api/v1/identity/register` 提交 Email + 密碼時，先依 Email 查詢是否已存在 `User`，分兩種情況：
 
 | 情況 | 判定 | 行為 |
@@ -93,5 +96,5 @@
 ## 6. 待決議事項
 - [x] ~~Refresh Token 與撤銷機制（目前只發 Access Token，過期後需重新登入）~~——**已解決**：見 §5.1（Access + Refresh 雙 Token、輪替機制、`RefreshToken` 實體）
 - [ ] LINE / Google OAuth 實際串接時程
-- [ ] §5.1 的登入/Refresh Token/密碼重設機制文字上聚焦「消費者會員」，但機制本身是 Identity Service 對所有 `Role` 共用（`Seller`/`SellerStaff` 同樣是 `PasswordHash` 登入），僅 `register` 端點限定 `Role=Buyer`——適用範圍需要更明確的書面澄清，避免誤讀成只服務買家（見 [10-gap-analysis.md](10-gap-analysis.md) §14）
+- [x] ~~§5.1 的登入/Refresh Token/密碼重設機制文字上聚焦「消費者會員」，但機制本身是 Identity Service 對所有 `Role` 共用~~——**已解決**：§5.1 開頭新增「適用範圍澄清」段落，明確列出僅 `register` 為消費者限定、其餘 7 個端點對所有角色共用
 - [x] ~~訪客升級為會員時，歷史訂單「自動關聯」是否要等信箱驗證通過才生效~~——**已解決**（使用者 2026-09-09 確認：要等驗證通過）：見 §5.1「訪客升級為會員」，沿用同一 `User.Id`（訂單本來就指向它，不需搬移），密碼暫存於 `AccountActionToken.PendingPasswordHash`，驗證通過那一刻才寫入 `User.PasswordHash`、帳號才能登入

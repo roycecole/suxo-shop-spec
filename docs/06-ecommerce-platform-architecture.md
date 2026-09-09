@@ -19,6 +19,7 @@
 | v0.14 | 2026-09-08 | ordinarycas | §9 同步 [01-architecture.md](01-architecture.md) §3 v0.4 的具體決定：功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-deploy-<客戶代稱>` 的 `.env`，解決 [10-gap-analysis.md](10-gap-analysis.md) §13 已列的缺口 |
 | v0.15 | 2026-09-09 | ordinarycas | §2 新增「主題模式」決策列：前台+後台皆支援深色/淺色模式、**預設淺色**、不跟隨系統偏好（使用者指定）；同時記錄前台首頁多語系（繁中/英/日）已依 [28-i18n.md](28-i18n.md) §2/§4 於實作 repo 落地（型別化字典＋fallback 繁中，正式 i18n 函式庫選型仍開放） |
 | v0.16 | 2026-09-09 | ordinarycas | §6.1、§9 repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名（見 [26-project-structure.md](26-project-structure.md)） |
+| v0.17 | 2026-09-09 | ordinarycas | §7 Saga 循序圖補上「Payment 建立失敗」分支（已核對 `ecommerce-services` 實作行為：`OrderStatus.Failed`、補償順序優惠券→庫存），解決 [30-open-decisions-register.md](30-open-decisions-register.md) 待決議項，回應「將待決議事項列出來實作」需求 |
 
 ## 0. 定位聲明
 
@@ -209,7 +210,7 @@ DB 連線方式**不寫死**，透過環境變數（`ConnectionStrings__Postgres
 ### 6.4 資料庫設計原則（不受部署模式影響）
 
 - **PostgreSQL，每服務一組獨立 schema**：`HasDefaultSchema`、EF migrations history 表也指定到同一 schema，避免與其他服務的 migration 集合衝突。
-- 初期可共用同一個 Postgres instance（多 schema），待流量或資源需求成長後再視情況拆成各自獨立的 DB instance——待決議事項，本文件不在此提前決定。
+- **定案：共用同一個 Postgres instance（多 schema），非各服務獨立 instance**——`ecommerce-services` 的 `docker-compose.yml` 已這樣實作並經 docker compose 全服務啟動實測（15 服務 + Gateway 共用同一個 `suxoshop` database、各自獨立 schema，`/health/ready` 全數通過）。待流量或資源需求成長後，仍可視情況把個別服務拆成獨立 instance（各服務本來就已用獨立 schema、無跨服務直接查表，拆分時只需改連線字串，不需要動 Migration 或應用層程式碼）——這件事本身不是本輪要提前決定的，但「初期共用一個 instance」不再是開放問題。
 - 庫存扣減採**原子條件更新**做法（`UPDATE ... WHERE StockQuantity >= N`），避免併發買超，詳見 [13-service-wms.md](13-service-wms.md)。
 
 ## 7. 結帳流程（Saga）
@@ -253,9 +254,17 @@ sequenceDiagram
                 Vendor-->>Order: CommissionRate（依賣家）
                 Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
                 Order->>Pay: 建立付款紀錄與導轉表單
-                Pay-->>Order: actionUrl + fields
-                Order-->>Buyer: 導轉金流付款頁
-                Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                alt 建立失敗
+                    Pay-->>Order: 失敗
+                    Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
+                    Order->>Promo: 補償：還原優惠券使用次數
+                    Order->>WMS: 補償：釋放預留庫存
+                    Order-->>Buyer: 結帳失敗
+                else 建立成功
+                    Pay-->>Order: actionUrl + fields
+                    Order-->>Buyer: 導轉金流付款頁
+                    Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                end
             end
         end
     end
@@ -266,8 +275,8 @@ sequenceDiagram
 3. 呼叫 Promotions Service 驗證並套用優惠券
 4. 呼叫 **Vendor Service** 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`，用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈（詳見 [17-service-order.md](17-service-order.md) §4）
 5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易）
-6. 呼叫 Payment Service 建立付款紀錄
-7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
+6. 呼叫 Payment Service 建立付款紀錄；這步失敗時 Order/SubOrder 已落地，補償多標記該筆訂單 `Status = Failed`（與買家主動取消的 `Cancelled` 區分，詳見 [17-service-order.md](17-service-order.md) §2、§4）
+7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數，Payment 步驟失敗時另外標記訂單 `Failed`），補償動作需冪等可重試
 8. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
 
 通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列。詳細步驟與補償邏輯見 [17-service-order.md](17-service-order.md)。
@@ -293,7 +302,7 @@ sequenceDiagram
 
 ## 10. 待決議事項
 - [ ] 服務數量（15 個）在單一 VPS 部署下的資源消耗——§6.3 已給出粗估規格，但**未經實測校正**，是否需要先合併部分低流量服務（如 CMS/Reviews）再視成長拆分
-- [ ] PostgreSQL 是共用 instance 多 schema，還是每服務獨立 instance（見 §6.4）
+- [x] ~~PostgreSQL 是共用 instance 多 schema，還是每服務獨立 instance~~——**已解決**：定案共用 instance 多 schema，`ecommerce-services` 已實作並通過全服務啟動實測，見 §6.4
 - [ ] 外部/內部 DB 模式下，遠端連線的網路延遲與安全性（防火牆規則、是否需要 VPN/SSL 連線至 DB）尚未規劃
 - [ ] Supabase 免費/低階方案的**連線數上限**是否足夠 15 個微服務各自維護連線池同時連線（可能需要每服務改小連線池大小，或改用 Supabase 的 Pooled Connection 因應）
 

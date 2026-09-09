@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-09 | ordinarycas | 新增 §4.1：Saga 補償失敗的統一處理設計（`SagaCompensationFailure` 實體＋指數退避重試＋人工介入端點 `GET /internal/v1/orders/support/compensation-failures`），[13-service-wms.md](13-service-wms.md)、[16-service-promotions.md](16-service-promotions.md) 同步回頭引用而不各自另立；§6 對應待決議項標記已解決 |
 | v0.5 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增待決議項——Saga 循序圖遺漏 Payment 建立失敗的補償分支 |
 | v0.6 | 2026-09-09 | ordinarycas | §2 補上 Order.OrderNumber 欄位、新增 §2.1 記錄 `ecommerce-services` 已實作的訂單編號產生規則（原本只活在程式碼的 TODO 註解裡）；§6 拆分原本混在一起的待決議項，訂單編號部分改為「現況已補上文件，正式定案與否仍待決議」，逾時未付款自動取消獨立成一項，回應「把已經做出來但規格沒寫的東西補回文件」需求 |
+| v0.7 | 2026-09-09 | ordinarycas | §2 補上 Order.Status 列舉值（原本只有欄位名、沒有值，與 SubOrder 那列不一致）；§4 循序圖補上「Payment 建立失敗」分支，核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 確認實際行為（`OrderStatus.Failed`、補償順序優惠券→庫存）後寫入；§6 對應待決議項標記已解決，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -18,7 +19,7 @@
 
 | 實體 | 說明 |
 |---|---|
-| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、Status、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
+| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
 | SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount（= 該 SubOrder 小計 × 結帳當下向 Vendor Service 查得的 `CommissionRate`，見 §4） |
 | OrderItem | ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
 
@@ -83,9 +84,17 @@ sequenceDiagram
                 Vendor-->>Order: CommissionRate（依賣家）
                 Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
                 Order->>Pay: 建立付款紀錄與導轉表單
-                Pay-->>Order: actionUrl + fields
-                Order-->>Buyer: 導轉金流付款頁
-                Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                alt 建立失敗
+                    Pay-->>Order: 失敗
+                    Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
+                    Order->>Promo: 補償：還原優惠券使用次數
+                    Order->>WMS: 補償：釋放預留庫存
+                    Order-->>Buyer: 結帳失敗
+                else 建立成功
+                    Pay-->>Order: actionUrl + fields
+                    Order-->>Buyer: 導轉金流付款頁
+                    Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                end
             end
         end
     end
@@ -96,8 +105,8 @@ sequenceDiagram
 3. 呼叫 Promotions Service 驗證並套用優惠券
 4. 呼叫 Vendor Service 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`GET /internal/v1/vendor/{vendorId}/commission-rate`，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
 5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出）
-6. 呼叫 Payment Service 建立付款紀錄
-7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數、標記訂單失敗），補償動作需冪等可重試
+6. 呼叫 Payment Service 建立付款紀錄；**這步失敗時，Order/SubOrder 在上一步已經落地**，所以補償多一個動作：標記該筆訂單 `Status = Failed`（§2 `OrderStatus` 列舉的獨立狀態，與買家主動取消的 `Cancelled` 區分，保留供事後追蹤，見 `ecommerce-services` 實作），再依序還原優惠券、釋放庫存；前三個失敗分支（庫存/優惠券/Vendor 查詢）發生在 Order/SubOrder 建立**之前**，不需要這個標記動作
+7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數，Payment 步驟失敗時另外標記訂單 `Failed`），補償動作需冪等可重試
 8. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
 
 通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列——單一客戶部署流量規模不大，非同步事件驅動換不到對應的複雜度代價。
@@ -146,4 +155,4 @@ sequenceDiagram
 - [x] ~~Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計~~——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 已定案傳遞規則（Gateway 產生/沿用 `X-Correlation-Id`，逐服務強制轉發）；`/internal/v1/orders/support/{id}/trace` 的實作需確保 Saga 每一步（呼叫 Cart/WMS/Promotions/Vendor/Payment）都帶上同一組 Correlation ID 並寫入自己的結構化 log，才能依此 ID 查出跨服務的完整執行軌跡
 - [ ] 逾時未付款自動取消機制需另訂（多久算逾時、由誰觸發取消、是否需要背景排程服務）
 - [x] ~~訂單編號產生策略需另訂~~——**部分解決**：現況已補上文件（見 §2.1），`ORD{日期}{8 碼亂數}` 是 `ecommerce-services` 目前實際在跑的暫定方案，不再是只活在程式碼 TODO 裡的無文件狀態；但「是否正式定案為永久設計，或改成更具業務意義的編號規則/加上防碰撞重試」本身仍是開放問題，未來要調整前先看 §2.1 現況說明
-- [ ] §4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支（僅畫出庫存不足/優惠券失敗/Vendor 查詢失敗三種），文字說明第 7 點隱含此分支同樣觸發補償鏈，圖表待補齊，見 [10-gap-analysis.md](10-gap-analysis.md) §14
+- [x] ~~§4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支~~——**已解決**：兩份文件的循序圖皆已補上第四個 `alt` 分支；已核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 實際行為（`OrderStatus.Failed`、補償順序為優惠券→庫存），文件與程式碼一致，見 [10-gap-analysis.md](10-gap-analysis.md) §14
