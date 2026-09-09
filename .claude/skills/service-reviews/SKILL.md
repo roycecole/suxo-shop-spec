@@ -17,6 +17,9 @@ description: "查詢電商平台 Reviews Service（商品評價）的職責、�
 - 4. API 大綱
 - 5. 待決議事項
 
+## 使用注意
+- §5 待決議事項唯一 1 項已解決：**評價審核機制定案預設直接顯示（事後審核制）**，非事前人工審核——這個規模平台沒有配置專職審核人力，賣家後台已有回覆機制可自行處理不當評價。與 `StoreSettings.ReviewsVisible`（[14-service-vendor.md](14-service-vendor.md) §2，控制整家店要不要顯示評價區塊）是不同層級的開關，不要混淆。
+
 ## 共通慣例
 此服務受 `docs/29-shared-service-conventions.md`（shared-service-conventions Skill）規範的跨服務共通慣例約束：Correlation ID 傳遞、`/health/live` + `/health/ready`、結構化 JSON log、Markdown 輸出消毒（若適用）、服務間內部認證。本文件未特別註明偏離的部分，一律以該文件為準，不要重複定義或另立一套。
 

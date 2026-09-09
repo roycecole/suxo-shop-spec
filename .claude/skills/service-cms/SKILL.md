@@ -17,6 +17,9 @@ description: "查詢電商平台 CMS Service（首頁/形象頁版型）的職�
 - 4. API 大綱
 - 5. 待決議事項
 
+## 使用注意
+- §5 待決議事項 2 項皆已解決，非仍待討論：**Page Builder 實作方式定案為簡化版**——`PageSection.Type` 固定列舉（Banner/FeaturedCategories/ProductBlock/VendorSpotlight/RichText/Custom），賣家從預定義類型挑選、排序、填寫各自 `Config` 參數，不是自建拖拉式編輯器（真拖拉式需整個重新設計資料模型，遠超目前規模需要）；**`StoreSettings` 歸屬定案為 Vendor Service**，不屬本服務，理由見 [14-service-vendor.md](14-service-vendor.md) §5。
+
 ## 共通慣例
 此服務受 `docs/29-shared-service-conventions.md`（shared-service-conventions Skill）規範的跨服務共通慣例約束：Correlation ID 傳遞、`/health/live` + `/health/ready`、結構化 JSON log、Markdown 輸出消毒（若適用）、服務間內部認證。本文件未特別註明偏離的部分，一律以該文件為準，不要重複定義或另立一套。
 
