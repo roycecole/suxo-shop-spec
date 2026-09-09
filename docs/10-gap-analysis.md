@@ -19,6 +19,7 @@
 | v0.14 | 2026-09-08 | ordinarycas | 應使用者要求，實作 §10/§11 剩餘的 5 項並回頭標記已解決：(1) [19-service-media.md](19-service-media.md) `MediaAsset` 補上 `VendorId`；(2) [20-service-cms.md](20-service-cms.md) §4 新增賣家草稿讀取端點；(3) [18-service-payment.md](18-service-payment.md) `Payment` 新增 `ProviderTransactionId` 與唯一索引，落實回調去重；(4) [17-service-order.md](17-service-order.md) §4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的結帳 Saga 補上查詢 Vendor Service `CommissionRate` 的步驟，[14](14-service-vendor.md) §4 新增對應內部端點；(5) 明訂 `StoreSettings.CodPaymentEnabled`（[14](14-service-vendor.md) §2）為 COD 開關唯一權威來源，[18](18-service-payment.md) §2 補充說明並新增賣家標記 COD 已收款端點 |
 | v0.15 | 2026-09-08 | ordinarycas | 應使用者要求「繼續處理」，收尾 §10/§11 最後 6 項，至此本文件 §10–§12 列出的項目已全數解決：(1) [12-service-catalog.md](12-service-catalog.md) §5 明訂讀取端點回傳已轉換的安全 HTML；(2) [09-api-specification.md](09-api-specification.md) 新增 §3 清單端點分頁慣例；(3) [22-service-analytics.md](22-service-analytics.md) §1 修正「訂閱事件」矛盾措辭；(4) [09-api-specification.md](09-api-specification.md) §2 新增健康檢查端點的統一聲明；(5) [29-shared-service-conventions.md](29-shared-service-conventions.md) §3 新增內部端點認證註記的統一讀法；(6) [17-service-order.md](17-service-order.md) §6 改寫過時的 Correlation ID 待決議項並標記已解決 |
 | v0.16 | 2026-09-08 | ordinarycas | 應使用者要求「繼續往下處理」，收尾 §12/§13 全部 7 項，至此本文件 §10–§13 第七/八輪複查列出的所有項目已全數解決：(1) [07-storefront-requirements.md](07-storefront-requirements.md) §3 補齊 Promotions/Reviews 頁面對應；(2) [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §4.3 移除誤植的「Admin」角色；(3) [03-client-lifecycle.md](03-client-lifecycle.md) §5 補上人工同步提醒；(4) [28-i18n.md](28-i18n.md) 新增 §3.1 定義 `SuxoShop.Shared.Translation` 套件內容；(5) [11-service-identity.md](11-service-identity.md) §5 定案帳號刪除採匿名化保留；(6) [23-service-notification.md](23-service-notification.md) §4 補上具體重試參數；(7) [01-architecture.md](01-architecture.md) §3、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §9 定案功能開關以 `ecommerce-deploy` 的 `.env` 環境變數存放 |
+| v0.17 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`；§6 ShyeCMS 前端規格/認證方式兩項缺口標記已解決（新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）；§9 共用套件資安修補傳播缺口標記已解決（[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）；§7 圖表函式庫缺口標記已解決（[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js）；§4 建議下一步同步勾選已解決項目；§5 設計系統文件建議編號因 `31` 已被佔用改為 `32` |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -59,16 +60,16 @@
 
 ## 4. 建議下一步（依風險排序）
 
-1. **補寫 ShyeCMS 前端需求規格**——目前完全空白，是唯一一個「連怎麼動工都無法回答」的缺口，優先度最高（見 §7）。
+1. ~~補寫 ShyeCMS 前端需求規格~~——**已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，見 §6。
 2. **撰寫 `docker-compose.yml` 骨架**——共通慣例、Correlation ID、服務間認證、Markdown 管線、資安基準都已定案（[29-shared-service-conventions.md](29-shared-service-conventions.md)），剩下缺的是把它們落實成實際可跑的 compose 檔案。
 3. **決定 Catalog/WMS 呼叫失敗時的前台降級行為**——直接影響買家體驗，且是拆分 WMS 直接產生的新風險。
 4. **定案 `StoreSettings` 歸屬服務**——影響後續 API 開發分工，屬於小決策但會卡住實作排程。
 5. **單一 VPS 的備份/災難復原策略**——決策集中風險到一台主機，上線前必須有備份與還原演練規劃，不是可以無限期擱置的項目。
-6. **共用函式庫的資安修補傳播機制**（見 §9）——決策 H 把共用邏輯改成版本化套件、各服務自行決定升級時機，這對一般版本更新是對的，但對資安修補是新風險，需要另訂「資安修補限期全部升級」的例外規則，否則會削弱 §8 剛建立的資安基準的實際保護力。
-7. **熱銷排行/付款分布的圖表函式庫選型**——Lightweight Charts 明確排除這兩種圖表類型，目前無替代方案，賣家後台這兩個既有功能實際上卡住無法動工。
+6. ~~共用函式庫的資安修補傳播機制~~（見 §9）——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) 新增 §4.1，訂出 7 個日曆天強制升級窗口，區分一般版本更新與資安修補。
+7. ~~熱銷排行/付款分布的圖表函式庫選型~~——**已解決**：[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js（`react-chartjs-2`），與 Lightweight Charts 職責互補。
 8. ~~補齊 Gateway 匿名端點速率限制~~——**已解決**：[25-service-gateway.md](25-service-gateway.md) 新增 §3.1，見 §11。
 9. ~~補上賣家後台 Promotions/Shipping/Reviews 三個服務的管理介面規格~~——**已解決**：[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1 已補上對應列，見 §12。
-10. 效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、ShyeCMS 認證機制、2FA、本機多 repo 開發流程——屬於功能性增強或維運細節，可排入下一輪迭代，非規格階段必須解決。
+10. 效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、高權限帳號 2FA、本機多 repo 開發流程——屬於功能性增強或維運細節，可排入下一輪迭代，非規格階段必須解決。
 
 > 「補齊其餘服務的 API 大綱」已於後續一輪完成（見 [11-service-identity.md](11-service-identity.md)–[25-service-gateway.md](25-service-gateway.md)），故不再列於本節。
 
@@ -80,7 +81,7 @@
 | 無障礙的動畫降級規則未成文 | §5.1 提到需搭配 `prefers-reduced-motion`，但目前只是原則性一句話，沒有具體規則（如降級後動畫時長歸零還是簡化成瞬時切換） |
 | 元件庫/UI 框架尚未選型 | 前台/後台目前只確定 Next.js（SSG）與 Vite SPA 兩種前端專案形態，但用什麼元件庫（如 Tailwind CSS、Ant Design、MUI 或全自訂）尚未決定，會直接影響 CSS 動畫怎麼組織（Utility Class vs CSS Module vs CSS-in-JS） |
 
-**建議**：這三項屬於同一個缺口（設計系統文件從缺）的不同面向，建議合併規劃成一份新文件（如 `31-design-system.md`，`26`–`30` 已分別被 [26](26-project-structure.md)、[27](27-pwa-and-accessibility.md)、[28](28-i18n.md)、[29](29-shared-service-conventions.md)、[30](30-open-decisions-register.md) 使用），而不是逐項零星補丁，比照本文件集其餘服務規格的拆分精神。
+**建議**：這三項屬於同一個缺口（設計系統文件從缺）的不同面向，建議合併規劃成一份新文件（如 `32-design-system.md`，`26`–`31` 已分別被 [26](26-project-structure.md)、[27](27-pwa-and-accessibility.md)、[28](28-i18n.md)、[29](29-shared-service-conventions.md)、[30](30-open-decisions-register.md)、[31](31-shyecms-frontend-requirements.md) 使用），而不是逐項零星補丁，比照本文件集其餘服務規格的拆分精神。
 
 ## 6. ShyeCMS 專案面（因應「確認專案清單」浮現）
 
@@ -88,12 +89,12 @@
 
 | 項目 | 說明 |
 |---|---|
-| **ShyeCMS 前端頁面/操作流程規格完全空白（最重要）** | 電商平台有 [07](07-storefront-requirements.md)（前台需求）、[08](08-vendor-admin-requirements.md)（後台需求）對應兩個前端；但 ShyeCMS 確認要做成獨立 React SPA 後，**沒有任何文件描述 `shyecms-admin` 實際有哪些頁面、拾夜科技員工的操作流程長什麼樣子**——[02-data-model.md](02-data-model.md)、[03-client-lifecycle.md](03-client-lifecycle.md) 只講資料模型與流程步驟，缺少 UI/UX 層級的規格 |
-| ShyeCMS 的認證方式未指定 | 電商平台各服務用 JWT（[09-api-specification.md](09-api-specification.md)），但 ShyeCMS 身為獨立系統，`StaffUser` 登入要用什麼機制（JWT？Session？是否需要 2FA，畢竟能操作所有客戶的合約資料）完全沒有規格 |
-| **六個 repo 各自的 CI/CD 與跨 repo 版本協調都未定案（範圍擴大）** | 沿用 §3 已列的 CI/CD 缺口，[26-project-structure.md](26-project-structure.md) 決策 H 把電商平台從 1 個 repo 拆成 4 個（services/storefront/admin/deploy）後，缺口從「2 條 pipeline」變成「6 條 pipeline + 1 套跨 repo 版本協調流程」：某個 repo 發新版後，`ecommerce-deploy` 何時、由誰更新映像檔標籤，目前只有問題本身被寫下來（[26](26-project-structure.md) §7），還沒有答案 |
+| ~~ShyeCMS 前端頁面/操作流程規格完全空白（最重要）~~ | **已解決**：新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)，比照 [07](07-storefront-requirements.md)/[08](08-vendor-admin-requirements.md) 的規格深度補齊 `shyecms-admin` 的頁面清單、操作流程、角色權限矩陣 |
+| ~~ShyeCMS 的認證方式未指定~~ | **已解決**：[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) §1 定案採 JWT Bearer（獨立簽發，與電商平台零共用），2FA 是否強制仍沿用 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 既有待決議，未隨本項一併定案 |
+| **六個 repo 各自的 CI/CD 與跨 repo 版本協調都未定案（範圍擴大）** | 沿用 §3 已列的 CI/CD 缺口，[26-project-structure.md](26-project-structure.md) 決策 H 把電商平台從 1 個 repo 拆成 4 個（services/storefront/admin/`ecommerce-launch`）後，缺口從「2 條 pipeline」變成「6 條 pipeline + 1 套跨 repo 版本協調流程」：某個 repo 發新版後，`ecommerce-launch` 何時、由誰更新映像檔標籤，目前只有問題本身被寫下來（[26](26-project-structure.md) §7），還沒有答案 |
 | ~~Monorepo 建置工具未選型~~ | **已解決（前提改變）**：電商平台不再是單一 monorepo——前台、後台、15 個服務已拆成三個獨立 repo（[26-project-structure.md](26-project-structure.md) 決策 H），`ecommerce-services` 內部也**不設共用 `.sln`**，改為各服務獨立建置，不需要 Nx/Turborepo 等級的跨語言建置編排工具 |
 
-**建議**：ShyeCMS 前端規格的優先度應提升——目前 ShyeCMS 的角色定義、資料模型都完備，但完全沒有人能依現有文件動工做出 `shyecms-admin` 這個介面，這是規格完整度上最大的落差，建議下一輪比照 [07](07-storefront-requirements.md)/[08](08-vendor-admin-requirements.md) 的規格深度補一份 ShyeCMS 前端需求文件。
+**建議**：ShyeCMS 前端規格已補齊（見上）。本節剩餘缺口只有六個 repo 的 CI/CD/版本協調 SOP，與 §3、§9 的維運面缺口性質相同，可併入同一輪處理。
 
 ## 7. 多語系/圖表/Markdown 決策的連鎖影響
 
@@ -103,10 +104,10 @@
 |---|---|
 | ~~各服務的 Translation 表尚未落實到個別文件~~ | **已解決**：Catalog（[12](12-service-catalog.md)）、CMS（[20](20-service-cms.md)）、Promotions（[16](16-service-promotions.md)）、Shipping（[21](21-service-shipping.md)）都已補上 `Translation` 表 |
 | ~~Markdown 渲染/清理邏輯是否共用~~ | **已解決**：統一為共用函式庫 `RenderMarkdownToSafeHtml`，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §2 |
-| **圖表方案只解決了一部分（仍未解決）** | [22-service-analytics.md](22-service-analytics.md) §4 明確排除 Lightweight Charts 不適用長條圖/圓餅圖，代表「熱銷商品排行」「付款方式分布」兩個既有報表項目目前**沒有圖表函式庫可用**，賣家後台這兩個既有功能實際上還無法動工 |
+| ~~圖表方案只解決了一部分~~ | **已解決**：[22-service-analytics.md](22-service-analytics.md) §4 補上 Chart.js（`react-chartjs-2`）作為熱銷商品排行/付款方式分布的方案，與 Lightweight Charts 職責互補 |
 | ~~i18n × SSG 的建置成本未重新估算~~ | **已解決**：執行期主機規格不受語言數量影響，Next.js 建置步驟改移到 CI/CD 執行，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.3 |
 
-**建議**：唯一還沒解決的是熱銷排行/付款分布的圖表選型，其餘三項已在本輪處理完畢。
+**建議**：本節四項已在本輪全數處理完畢。
 
 ## 8. 資安面（因應「資訊安全性非常重要」正式收斂）
 
@@ -125,11 +126,11 @@
 | 項目 | 說明 |
 |---|---|
 | **本機多 repo 開發流程未定義** | 過去 monorepo 下 `docker compose up` 一次啟動全部即可本機開發；現在 `ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin` 是三個獨立 repo，開發者若要同時改動「Catalog 新增欄位 + 後台顯示該欄位」這種橫跨兩個 repo 的功能，需要並排 clone 多個 repo 並手動處理彼此依賴（如後台想測試 Catalog 未發版的新端點，`api-client` 套件版本要怎麼指到「本機開發中」的版本而非已發布版本），目前沒有規範這個流程，容易讓每個開發者各自摸索出不同做法 |
-| **共用函式庫的安全性修補傳播沒有例外機制** | [29-shared-service-conventions.md](29-shared-service-conventions.md) 定調共用邏輯改版本化套件、各服務自行決定升級時機（§4.2 的理由是保留獨立升級節奏）。但如果 `SuxoShop.Shared.Markdown` 修的是一個嚴重 XSS 漏洞，「各服務自行決定何時升級」就不該適用——目前沒有區分「一般版本更新（可以慢慢升）」與「資安修補（必須限期全部升級）」，這是決策 H 為了解決 §5 的耦合問題而**新產生**的風險，不是原本就有的 |
+| ~~共用函式庫的安全性修補傳播沒有例外機制~~ | **已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) 新增 §4.1，資安修補獨立分級——7 個日曆天強制升級窗口 ＋ `[SECURITY]` Release Notes 標示 ＋ 人工追蹤清單，與一般版本更新的自由升級節奏區分開來 |
 | **`api-client` 套件版本與後端服務版本的相容性矩陣更複雜** | §3 已列「各服務版本不同步的實際治理」缺口；決策 H 之後多一個維度——`api-client` 套件本身也獨立版本化，一份 `api-client@3.2.0` 對應的是「呼叫哪些服務的哪個版本」需要額外追蹤，不是單純服務對服務的相容性問題 |
 | **私有套件/映像檔倉庫的建置與維運成本** | 決策 H 需要私有 NuGet feed、私有 npm registry、容器映像檔倉庫三種基礎設施才能運作，這是 monorepo 時代不需要的額外維運項目，目前只在 [26](26-project-structure.md) §7 列為選型待決議，其建置與維運成本（含金錢與人力）未被評估過 |
 
-**建議**：安全性修補傳播機制（第二項）建議優先處理——這直接關係到 [29-shared-service-conventions.md](29-shared-service-conventions.md) 好不容易建立的資安基準（§8）能不能真正落實，如果共用函式庫修了漏洞但服務們各自「之後再升級」，資安基準文件本身的保護力會大打折扣。其餘三項屬於開發流程/維運成本問題，可在正式建置團隊成形後排入 SOP 制定，不阻塞規格本身。
+**建議**：安全性修補傳播機制已解決（見上，[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）。其餘兩項（`api-client` 相容性矩陣、私有倉庫維運成本）屬於開發流程/維運成本問題，可在正式建置團隊成形後排入 SOP 制定，不阻塞規格本身。
 
 ## 10. 微服務 API/資料模型缺漏（第七輪跨文件複查）
 
@@ -184,4 +185,4 @@
 
 ~~[01-architecture.md](01-architecture.md) §3 說明「客戶平台本身如何讀取這些設定，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)」，但 06 §9 實際上只重申同一句高層原則，並未真的說明具體機制~~
 
-**已解決**：01 §3、06 §9 已同步定案具體機制——功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-deploy-<客戶代稱>` repo 的 `.env`（不放在隨原始碼 commit 的各服務 `appsettings.{Environment}.json`，避免牴觸「同一份映像檔靠環境變數部署到任何客戶」的既有原則），並釐清這是**合約層級**的主開關，與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己的 `StoreSettings` 是不同層級（主開關關閉時 `StoreSettings` 對應選項不生效）。
+**已解決**：01 §3、06 §9 已同步定案具體機制——功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-launch-<客戶代稱>` repo 的 `.env`（不放在隨原始碼 commit 的各服務 `appsettings.{Environment}.json`，避免牴觸「同一份映像檔靠環境變數部署到任何客戶」的既有原則），並釐清這是**合約層級**的主開關，與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己的 `StoreSettings` 是不同層級（主開關關閉時 `StoreSettings` 對應選項不生效）。
