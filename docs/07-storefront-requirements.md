@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | §1 補充說明：本節「硬性需求」與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 的賣家自訂 `StoreSettings` 開關的界線，解決前一輪複查發現兩者矛盾（08 已移除對應開關，見其 v0.5） |
 | v0.4 | 2026-09-08 | ordinarycas | §3 頁面清單補上結帳頁對應 Promotions Service、商品詳情頁對應 Reviews Service，解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的漏列問題 |
 | v0.5 | 2026-09-09 | ordinarycas | 回應「新增消費者會員登入，先保留 Google、Line 登入」需求：§3 補上登入/註冊、忘記密碼、會員中心三個頁面對應；§2 Email+密碼列補上 [11-service-identity.md](11-service-identity.md) §5.1 詳細流程的交叉引用。LINE/Google 維持既有保留狀態不變，未異動 |
+| v0.6 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§1「訪客升級為會員」機制與 [11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證流程存在帳號冒領風險，本文件本身不解決該問題（涉及 Identity Service 設計，非前台需求範疇），僅於 §5 新增對應待決議項記錄 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -58,6 +59,7 @@
 ## 5. 待決議事項
 - [ ] LINE / Google OAuth 實際串接時程（沿用 v1 既有缺口，未在本輪排入）
 - [ ] 訪客結帳是否需要簡訊驗證等防詐機制（生鮮商品退貨成本高，惡意下單風險需評估）
+- [ ] **訪客升級為會員的確切機制未定義**：§1 只說「歷史訂單自動關聯到新帳號」，未定案是重複使用同一個 `User.Id`（訪客無密碼帳號直接補上密碼），還是新建帳號再把舊訂單 `BuyerId` 改指過去；也未定案這個「自動關聯」是否要等 [11-service-identity.md](11-service-identity.md) §5.1 的信箱驗證通過才生效——若不等驗證，任何人知道受害者曾用來訪客結帳的 Email 就能自行註冊並看到其歷史訂單，是帳號/訂單歷史冒領風險，見 [10-gap-analysis.md](10-gap-analysis.md) §14
 
 ## 6. RWD / PWA / 無障礙規範
 

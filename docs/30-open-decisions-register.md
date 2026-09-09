@@ -9,24 +9,26 @@
 | v0.4 | 2026-09-09 | ordinarycas | 同步 [25-service-gateway.md](25-service-gateway.md) v0.3：反向代理引擎選型（YARP vs 自建）於 2026-09-09 定案採用 YARP——該項先前未曾列入任何待決議清單，本次於來源文件補列並即標記已解決，故 §4 不新增列，僅更新統計為 77 項未解決 + 3 項已解決；前 10 名清單不受影響 |
 | v0.5 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`；同步本輪 5 項新解決事項並移出對應列——ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1，§4 移除 WMS/Promotions/Order 三列、§6 移除對應合併決策列）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）；§1 前 10 名因此縮減為前 5 名（原第 6–10 名依序遞補，未額外補新項目）；統計更新為 71 項未解決 + 8 項已解決（修正：先前記為 70 項是手動心算漏算 §5 一行，v0.6 已用腳本逐行核對訂正） |
 | v0.6 | 2026-09-09 | ordinarycas | 同步 [11-service-identity.md](11-service-identity.md) v0.3：Refresh Token 與撤銷機制已設計（§5.1），§4 移除對應列；改用腳本逐行核對 §2–§5 列數（而非手動心算），統計訂正為 70 項未解決 + 9 項已解決 |
+| v0.7 | 2026-09-09 | ordinarycas | 同步 [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查（新增消費者會員登入後的連鎖影響）：§3 新增訪客升級為會員機制列、§4 新增 Identity §5.1 適用範圍列與 Order Payment 失敗分支列，共 3 項新增（Gateway 路由不一致屬純格式錯誤已直接修正，不列入待決議）；§1 新增第 1 名（帳號安全新發現），改為前 6 名；統計更新為 73 項未解決 + 9 項已解決 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**70 項未解決** + 9 項已解決（逐行核對 §2–§5 表格列數所得，非估算）（[12-service-catalog.md](12-service-catalog.md) 的 Markdown XSS 防護、[17-service-order.md](17-service-order.md) 的 Correlation ID 貫穿追蹤、[25-service-gateway.md](25-service-gateway.md) 的反向代理引擎選型（YARP）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17-service-order.md](17-service-order.md) §4.1，含 WMS/Promotions/Order 三個服務對應項目一併解決）、熱銷排行/付款分布圖表選型（[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8 鎖定不服務海外）為前一輪的 8 項；本輪 2026-09-09 新增 1 項：Identity Refresh Token 與撤銷機制（[11-service-identity.md](11-service-identity.md) §5.1）——已解決項目不列入本表）。
+統計：**73 項未解決** + 9 項已解決（逐行核對 §2–§5 表格列數所得，非估算）（[12-service-catalog.md](12-service-catalog.md) 的 Markdown XSS 防護、[17-service-order.md](17-service-order.md) 的 Correlation ID 貫穿追蹤、[25-service-gateway.md](25-service-gateway.md) 的反向代理引擎選型（YARP）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17-service-order.md](17-service-order.md) §4.1，含 WMS/Promotions/Order 三個服務對應項目一併解決）、熱銷排行/付款分布圖表選型（[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8 鎖定不服務海外）為前一輪的 8 項；本輪 2026-09-09 新增 1 項：Identity Refresh Token 與撤銷機制（[11-service-identity.md](11-service-identity.md) §5.1）——已解決項目不列入本表）。
 
-## 1. 前 5 項建議優先處理（依風險/急迫性排序，非文件順序）
+## 1. 前 6 項建議優先處理（依風險/急迫性排序，非文件順序）
 
-> 2026-09-09 本輪解決了原本前 10 名中的前 5 項（ShyeCMS 前端規格、共用套件資安修補傳播、Saga 補償失敗處理、圖表函式庫選型、英日文海外客群範圍，見上方統計說明）。下表是原第 6–10 名依序遞補後的清單，**未**額外遞補新項目補滿 10 名——若需要完整的前 10 名，建議下一輪對 §2–§5 剩餘項目重新評估風險排序，而非由本次調整順手代勞。
+> 2026-09-09 本輪解決了原本前 10 名中的前 5 項（ShyeCMS 前端規格、共用套件資安修補傳播、Saga 補償失敗處理、圖表函式庫選型、英日文海外客群範圍，見上方統計說明）。同日第九輪複查（新增消費者會員登入後）新發現一項牽涉帳號安全的缺口，補進第 1 名。其餘為原第 6–10 名依序遞補的清單——若需要完整的前 10 名，建議下一輪對 §2–§5 剩餘項目重新評估風險排序，而非由本次調整順手代勞。
 
 | # | 項目 | 為什麼優先 | 來源 |
 |---|---|---|---|
-| 1 | 單一 VPS 的備份/災難復原策略空白 | 架構決策把風險集中到一台主機，上線前必須有答案，不是能無限期擱置的項目 | [06](06-ecommerce-platform-architecture.md) §10 |
-| 2 | 六個 repo 的 CI/CD 與跨 repo 版本協調 SOP | repo 拆分後最直接的維運後果，沒有這個 SOP，`ecommerce-launch` 的版本標籤永遠只能手動猜 | [26](26-project-structure.md) §7 |
-| 3 | `StoreSettings` 歸屬 Vendor 還是 CMS Service | 影響 API 開發分工，卡住實作排程的小決策 | [14](14-service-vendor.md) §4、[20](20-service-cms.md) §5 |
-| 4 | 三家金流廠商的沙箱實測 | 上線前必做，且是規格無法解決的項目（需要廠商測試環境憑證） | [18](18-service-payment.md) §8 |
-| 5 | 高權限帳號（SuperAdmin/PlatformSupportStaff）2FA | 這兩個角色能碰到所有客戶或所有訂單資料，權限範圍最大但目前驗證強度未提升 | [29](29-shared-service-conventions.md) §5 |
+| 1 | 訪客升級為會員的機制未定義，與新增信箱驗證流程有帳號冒領風險 | 唯一牽涉帳號安全的新發現：若自動關聯歷史訂單不等信箱驗證，任何人知道受害者的訪客結帳 Email 就能冒領其訂單歷史 | [07](07-storefront-requirements.md) §5、[11](11-service-identity.md) §6 |
+| 2 | 單一 VPS 的備份/災難復原策略空白 | 架構決策把風險集中到一台主機，上線前必須有答案，不是能無限期擱置的項目 | [06](06-ecommerce-platform-architecture.md) §10 |
+| 3 | 六個 repo 的 CI/CD 與跨 repo 版本協調 SOP | repo 拆分後最直接的維運後果，沒有這個 SOP，`ecommerce-launch` 的版本標籤永遠只能手動猜 | [26](26-project-structure.md) §7 |
+| 4 | `StoreSettings` 歸屬 Vendor 還是 CMS Service | 影響 API 開發分工，卡住實作排程的小決策 | [14](14-service-vendor.md) §4、[20](20-service-cms.md) §5 |
+| 5 | 三家金流廠商的沙箱實測 | 上線前必做，且是規格無法解決的項目（需要廠商測試環境憑證） | [18](18-service-payment.md) §8 |
+| 6 | 高權限帳號（SuperAdmin/PlatformSupportStaff）2FA | 這兩個角色能碰到所有客戶或所有訂單資料，權限範圍最大但目前驗證強度未提升 | [29](29-shared-service-conventions.md) §5 |
 
 ## 2. ShyeCMS（[00](00-overview.md)–[05](05-scope-and-open-items.md)）
 
@@ -51,6 +53,7 @@
 | CI/CD 建置機器的規格未定 | [06](06-ecommerce-platform-architecture.md) §10 |
 | LINE / Google OAuth 實際串接時程 | [07](07-storefront-requirements.md) §5 |
 | 訪客結帳是否需要簡訊驗證等防詐機制 | [07](07-storefront-requirements.md) §5 |
+| 訪客升級為會員的確切機制未定義，含自動關聯歷史訂單是否需等信箱驗證通過（帳號冒領風險） | [07](07-storefront-requirements.md) §5、[11](11-service-identity.md) §6 |
 | `PlatformSupportStaff` 白名單診斷操作清單需逐服務盤點 | [08](08-vendor-admin-requirements.md) §6 |
 | `PlatformSupportStaff` 存取是否需要即時通知客戶端 | [08](08-vendor-admin-requirements.md) §6 |
 | 唯讀範圍是否需要對會員 Email/電話遮罩顯示 | [08](08-vendor-admin-requirements.md) §6 |
@@ -65,6 +68,7 @@
 | 服務 | 項目 |
 |---|---|
 | Identity | LINE / Google OAuth 實際串接時程（[11](11-service-identity.md) §6） |
+| Identity | §5.1 登入/Refresh Token/密碼重設機制是否明確適用 Seller/SellerStaff 待澄清（[11](11-service-identity.md) §6） |
 | Catalog | 商品搜尋效能（`LIKE` 無法用索引）（[12](12-service-catalog.md) §6） |
 | Catalog | 稅務欄位是否正式納入 Product（[12](12-service-catalog.md) §6） |
 | WMS | 多倉支援未區分（[13](13-service-wms.md) §6） |
@@ -76,6 +80,7 @@
 | Promotions | 優惠券是否可疊加使用（[16](16-service-promotions.md) §5） |
 | Promotions | `Coupon.Code` 唯一性範圍（[16](16-service-promotions.md) §5） |
 | Order | 逾時未付款自動取消、訂單編號策略需另訂（[17](17-service-order.md) §6） |
+| Order | Saga 循序圖遺漏 Payment 建立失敗的補償分支（[17](17-service-order.md) §6） |
 | Payment | 三家廠商沙箱實測（[18](18-service-payment.md) §8） |
 | Payment | 退款金流串接未實作（[18](18-service-payment.md) §8） |
 | Payment | 對帳排程未實作（[18](18-service-payment.md) §8） |

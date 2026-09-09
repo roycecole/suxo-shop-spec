@@ -20,6 +20,7 @@
 | v0.15 | 2026-09-08 | ordinarycas | 應使用者要求「繼續處理」，收尾 §10/§11 最後 6 項，至此本文件 §10–§12 列出的項目已全數解決：(1) [12-service-catalog.md](12-service-catalog.md) §5 明訂讀取端點回傳已轉換的安全 HTML；(2) [09-api-specification.md](09-api-specification.md) 新增 §3 清單端點分頁慣例；(3) [22-service-analytics.md](22-service-analytics.md) §1 修正「訂閱事件」矛盾措辭；(4) [09-api-specification.md](09-api-specification.md) §2 新增健康檢查端點的統一聲明；(5) [29-shared-service-conventions.md](29-shared-service-conventions.md) §3 新增內部端點認證註記的統一讀法；(6) [17-service-order.md](17-service-order.md) §6 改寫過時的 Correlation ID 待決議項並標記已解決 |
 | v0.16 | 2026-09-08 | ordinarycas | 應使用者要求「繼續往下處理」，收尾 §12/§13 全部 7 項，至此本文件 §10–§13 第七/八輪複查列出的所有項目已全數解決：(1) [07-storefront-requirements.md](07-storefront-requirements.md) §3 補齊 Promotions/Reviews 頁面對應；(2) [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §4.3 移除誤植的「Admin」角色；(3) [03-client-lifecycle.md](03-client-lifecycle.md) §5 補上人工同步提醒；(4) [28-i18n.md](28-i18n.md) 新增 §3.1 定義 `SuxoShop.Shared.Translation` 套件內容；(5) [11-service-identity.md](11-service-identity.md) §5 定案帳號刪除採匿名化保留；(6) [23-service-notification.md](23-service-notification.md) §4 補上具體重試參數；(7) [01-architecture.md](01-architecture.md) §3、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §9 定案功能開關以 `ecommerce-deploy` 的 `.env` 環境變數存放 |
 | v0.17 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`；§6 ShyeCMS 前端規格/認證方式兩項缺口標記已解決（新增 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）；§9 共用套件資安修補傳播缺口標記已解決（[29-shared-service-conventions.md](29-shared-service-conventions.md) §4.1）；§7 圖表函式庫缺口標記已解決（[22-service-analytics.md](22-service-analytics.md) §4 採 Chart.js）；§4 建議下一步同步勾選已解決項目；§5 設計系統文件建議編號因 `31` 已被佔用改為 `32` |
+| v0.18 | 2026-09-09 | ordinarycas | 回應「分析還有哪些可以調整或修改的」第九輪複查：新增消費者會員登入（[11-service-identity.md](11-service-identity.md) §5.1）與 Saga 補償統一設計（[17-service-order.md](17-service-order.md) §4.1）之後，重新通讀全部 15 個微服務規格，新增 §14 記錄 5 項新發現——最重要的一項是「訪客升級為會員」機制與新增信箱驗證流程之間存在帳號/訂單歷史冒領風險，尚未修正，僅記錄分析結果；§4 新增項目 11 呼應此發現 |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -70,6 +71,7 @@
 8. ~~補齊 Gateway 匿名端點速率限制~~——**已解決**：[25-service-gateway.md](25-service-gateway.md) 新增 §3.1，見 §11。
 9. ~~補上賣家後台 Promotions/Shipping/Reviews 三個服務的管理介面規格~~——**已解決**：[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1 已補上對應列，見 §12。
 10. 效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、高權限帳號 2FA、本機多 repo 開發流程——屬於功能性增強或維運細節，可排入下一輪迭代，非規格階段必須解決。
+11. **訪客升級為會員的機制與信箱驗證時機**（見 §14）——唯一牽涉帳號安全的新發現，雖排在清單末尾，實際風險等級不低於前段項目，建議與項目 3–5 同一批處理。
 
 > 「補齊其餘服務的 API 大綱」已於後續一輪完成（見 [11-service-identity.md](11-service-identity.md)–[25-service-gateway.md](25-service-gateway.md)），故不再列於本節。
 
@@ -186,3 +188,17 @@
 ~~[01-architecture.md](01-architecture.md) §3 說明「客戶平台本身如何讀取這些設定，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)」，但 06 §9 實際上只重申同一句高層原則，並未真的說明具體機制~~
 
 **已解決**：01 §3、06 §9 已同步定案具體機制——功能開關以 `FEATUREFLAGS__<FlagName>` 環境變數存放在 `ecommerce-launch-<客戶代稱>` repo 的 `.env`（不放在隨原始碼 commit 的各服務 `appsettings.{Environment}.json`，避免牴觸「同一份映像檔靠環境變數部署到任何客戶」的既有原則），並釐清這是**合約層級**的主開關，與 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 賣家自己的 `StoreSettings` 是不同層級（主開關關閉時 `StoreSettings` 對應選項不生效）。
+
+## 14. 本輪新增設計（會員登入、Saga 補償）帶來的連鎖影響（第九輪複查，2026-09-09）
+
+新增消費者會員登入（[11-service-identity.md](11-service-identity.md) §5.1）與 Saga 補償失敗統一設計（[17-service-order.md](17-service-order.md) §4.1）後，回頭複查全部 15 個微服務規格與跨文件一致性，發現以下新缺口：
+
+| 項目 | 說明 |
+|---|---|
+| **訪客升級為會員的確切機制未定義，與新增的信箱驗證流程存在安全疑慮（較重要）** | [07-storefront-requirements.md](07-storefront-requirements.md) §1「訪客升級為會員」只說「系統將歷史訂單自動關聯到新帳號」，但沒說清楚：(1) 是重複使用同一個 `User.Id`（訪客的無密碼帳號直接補上密碼升級），還是新建一個 `User.Id` 再把舊訂單的 `BuyerId` 改指過去；(2) 這個「自動關聯」是否要等 [11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證通過才生效——**若不等驗證就自動關聯，任何人只要知道受害者曾用來訪客結帳的 Email，就能自行註冊該 Email 並立即看到受害者的歷史訂單**，形成帳號/訂單歷史被冒領的風險。§5.1 目前只設計了「一般註冊」的驗證流程，沒有涵蓋這個「訪客升級」的特殊路徑，是本輪新增設計時的疏漏 |
+| §5.1 的登入/Refresh Token/密碼重設機制隱含適用 Seller/SellerStaff，但文字聚焦在「消費者會員」，易被誤讀為僅限 Buyer | [11-service-identity.md](11-service-identity.md) §5.1 開頭寫「聚焦消費者會員登入」，但 `login`/`refresh-token`/`forgot-password` 等端點是 Identity Service 對所有 `Role` 共用的機制，`Seller`/`SellerStaff` 帳號同樣是 `PasswordHash` 登入，理論上同樣適用——只有 `register`（固定建立 `Role=Buyer`）才是消費者限定，其餘端點的適用範圍需要更明確的文字釐清，避免未來誤以為要幫賣家另外設計一套登入機制 |
+| **結帳 Saga 循序圖遺漏「Payment 建立失敗」分支** | [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7、[17-service-order.md](17-service-order.md) §4 的 Mermaid 循序圖只畫出「庫存不足」「優惠券失敗」「Vendor 查詢失敗」三種失敗分支，但文字說明第 7 點明確寫「任一步驟失敗 → 觸發補償」，隱含 Payment Service 建立付款紀錄失敗時同樣要走 WMS 釋放庫存 + Promotions 還原優惠券的補償鏈——圖表沒有畫出這第四種失敗路徑，容易讓人誤以為 Payment 步驟不會失敗，或漏掉它也適用 [17-service-order.md](17-service-order.md) §4.1 新增的補償失敗統一設計 |
+| ~~Gateway 路由範例與 Reviews Service 實際端點路徑不一致~~ | **已直接修正**：[25-service-gateway.md](25-service-gateway.md) §4.1 原寫「`/api/v1/orders/{id}/reviews`」與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點 `POST /api/v1/orders/{subOrderId}/review` 對不上，純格式錯誤，非待決議，已訂正 |
+| Notification 的「Email/簡訊是否併入本服務」待決議項急迫性提升 | 這項待決議（[23-service-notification.md](23-service-notification.md) §7）先前只是抽象的「未來可能需要」；[11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證信/密碼重設信現在**具體依賴**這個管道才能真正寄出，不再是假設性需求——本項待決議的優先度應提升，見 §4「建議下一步」 |
+
+**建議**：優先處理第一項（訪客升級為會員機制 + 驗證時機）——這是唯一牽涉帳號安全的新發現，其餘四項屬於文件釐清/一致性訂正，可視時間排入下一輪。

@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)、[09-api-specification.md](09-api-specification.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 定義 `DELETE /api/v1/identity/account` 刪除後的關聯資料處理方式（採匿名化保留，非級聯刪除），解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的缺口 |
 | v0.3 | 2026-09-09 | ordinarycas | 回應「新增消費者會員登入，先保留 Google、Line 登入」需求：新增 §5.1 消費者會員（Email+密碼）註冊/信箱驗證/忘記密碼/Refresh Token 完整流程設計；§2 新增 `RefreshToken`/`AccountActionToken` 實體與 `User.EmailVerifiedAt` 欄位；§5 API 大綱補上 7 個新端點；§6 Refresh Token 待決議項標記已解決；LINE/Google 維持既有保留狀態不變，本輪不涉及 |
+| v0.4 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增 2 項待決議——§5.1 適用範圍是否涵蓋 Seller/SellerStaff 待書面澄清、訪客升級為會員的自動關聯時機與信箱驗證的交互未定義（帳號冒領風險） |
 
 ## 1. 職責
 
@@ -75,3 +76,5 @@
 ## 6. 待決議事項
 - [x] ~~Refresh Token 與撤銷機制（目前只發 Access Token，過期後需重新登入）~~——**已解決**：見 §5.1（Access + Refresh 雙 Token、輪替機制、`RefreshToken` 實體）
 - [ ] LINE / Google OAuth 實際串接時程
+- [ ] §5.1 的登入/Refresh Token/密碼重設機制文字上聚焦「消費者會員」，但機制本身是 Identity Service 對所有 `Role` 共用（`Seller`/`SellerStaff` 同樣是 `PasswordHash` 登入），僅 `register` 端點限定 `Role=Buyer`——適用範圍需要更明確的書面澄清，避免誤讀成只服務買家（見 [10-gap-analysis.md](10-gap-analysis.md) §14）
+- [ ] **訪客升級為會員時，歷史訂單「自動關聯」是否要等信箱驗證通過才生效**：目前 §5.1 只設計了一般註冊的驗證流程，未涵蓋訪客升級這個特殊路徑，若不等驗證即關聯，存在帳號/訂單歷史冒領風險，詳見 [07-storefront-requirements.md](07-storefront-requirements.md) §5、[10-gap-analysis.md](10-gap-analysis.md) §14

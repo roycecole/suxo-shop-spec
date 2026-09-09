@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | 新增 §3.1 匿名端點速率限制，補上 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 已要求、但本文件先前只涵蓋持金鑰呼叫的限流缺口（見 [10-gap-analysis.md](10-gap-analysis.md) §11） |
 | v0.3 | 2026-09-09 | ordinarycas | 回應「反向代理引擎選型（YARP vs 自建）已定案」指示：新增 §4.1 定案採用 `Yarp.ReverseProxy`（YARP）取代手刻 `HttpClient` 轉發的過渡實作（含定案理由與落地現況）；§7 補列該選型為待決議項並同步標記已解決——此選型先前只散見於實作，未曾正式列入待決議清單 |
+| v0.4 | 2026-09-09 | ordinarycas | §4.1 訂正 Reviews 路由範例與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點不一致的寫法（`/api/v1/orders/{id}/reviews` 誤植，應為 `/api/v1/orders/{subOrderId}/review`），[10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現的純格式錯誤，直接修正 |
 
 ## 1. 職責
 
@@ -56,7 +57,7 @@ Gateway 不新開一組「內部 API」給自己呼叫，而是直接路由到�
 3. 避免自建轉發隨聚合/重試/限流需求長成第二個框架——這些 YARP 都有現成擴充點。
 4. 單一 VPS、單客戶流量規模下，自建的唯一優勢「省一個依賴」不敵維護成本。
 
-落地現況：Gateway 已改用 YARP，路由表涵蓋全部 14 個領域服務的公開 `/api/v1/*` 前綴（Reviews 掛在 `/api/v1/products/{id}/reviews`、`/api/v1/orders/{id}/reviews` 的較特定路由，優先於 Catalog/Order 的字首路由）；金鑰驗證（§3）、聚合、限流（§3.1）仍未實作，維持待辦。
+落地現況：Gateway 已改用 YARP，路由表涵蓋全部 14 個領域服務的公開 `/api/v1/*` 前綴（Reviews 掛在 `/api/v1/products/{id}/reviews`、`/api/v1/orders/{subOrderId}/review` 的較特定路由，優先於 Catalog/Order 的字首路由——路徑訂正為與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點一致，原文誤植為複數 `reviews` 且參數名寫成 `id`）；金鑰驗證（§3）、聚合、限流（§3.1）仍未實作，維持待辦。
 
 ## 5. 資料模型
 
