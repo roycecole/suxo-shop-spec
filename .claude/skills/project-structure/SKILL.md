@@ -21,6 +21,7 @@ description: "查詢完整的 repo 結構：6 個 repo（shyecms-api/shyecms-adm
 
 ## 使用注意
 - 建立新服務或調整 shared 函式庫時，要照 §4 的版本化套件慣例，不要用 ProjectReference 或 monorepo 路徑直接參照其他服務/repo。
+- **§7 待決議事項 4 項已全數解決**（v0.6–v0.8），不要以為還有未決項目：私有套件登錄選型定案 **GitHub Packages**（同時扛 NuGet 與 npm，不自架 Verdaccio/BaGet）；跨 repo CI/CD SOP 定案為 5 個有原始碼的 repo 各自用 GitHub Actions（push `main` 跑 build+test，推語意化版本 git tag 時額外建置映像檔推送 GitHub Packages）；`ecommerce-launch`（含各客戶 `ecommerce-launch-<客戶代稱>`）的版本標籤更新**現階段刻意維持人工**、不做自動化 PR bot（理由：不是每個客戶都該立刻升級，人工步驟本身就是確認關卡）；`services/*/Dockerfile` 已統一為同構 multi-stage build 並通過全服務 `docker compose up` 啟動實測。
 
 ## 修改這份文件時
 - 依 `spec-add-changelog-entry` Skill 的步驟新增異動紀錄（版號/日期/作者/說明），不要靜默修改內容。
