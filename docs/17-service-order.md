@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | §6 Correlation ID 待決議項已過時——機制已由 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 定案，改為標記已解決並確認本服務的落實方式 |
 | v0.4 | 2026-09-09 | ordinarycas | 新增 §4.1：Saga 補償失敗的統一處理設計（`SagaCompensationFailure` 實體＋指數退避重試＋人工介入端點 `GET /internal/v1/orders/support/compensation-failures`），[13-service-wms.md](13-service-wms.md)、[16-service-promotions.md](16-service-promotions.md) 同步回頭引用而不各自另立；§6 對應待決議項標記已解決 |
 | v0.5 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增待決議項——Saga 循序圖遺漏 Payment 建立失敗的補償分支 |
+| v0.6 | 2026-09-09 | ordinarycas | §2 補上 Order.OrderNumber 欄位、新增 §2.1 記錄 `ecommerce-services` 已實作的訂單編號產生規則（原本只活在程式碼的 TODO 註解裡）；§6 拆分原本混在一起的待決議項，訂單編號部分改為「現況已補上文件，正式定案與否仍待決議」，逾時未付款自動取消獨立成一項，回應「把已經做出來但規格沒寫的東西補回文件」需求 |
 
 ## 1. 職責
 
@@ -17,9 +18,25 @@
 
 | 實體 | 說明 |
 |---|---|
-| Order | BuyerId（訪客可為 null，改用訪客識別）、Status、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
+| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、Status、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
 | SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount（= 該 SubOrder 小計 × 結帳當下向 Vendor Service 查得的 `CommissionRate`，見 §4） |
 | OrderItem | ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
+
+### 2.1 訂單編號（OrderNumber）產生規則（現況記錄，暫定方案）
+
+`ecommerce-services` 的 `CheckoutOrderCommandHandler`（結帳 Saga 建立訂單那一步）已實作以下規則，先前只以程式碼裡的 TODO 註解存在，未回頭寫進本文件：
+
+```
+ORD{yyyyMMdd}{8 位大寫十六進位亂數}
+範例：ORD202609099F3A1C7B
+```
+
+- **日期部分**：UTC 日期（不是台北時區），八位數字（`yyyyMMdd`）。因為是 UTC，午夜前後下單可能與台北當地日期相差一天，目前沒有特別處理。
+- **亂數部分**：一組新產生 GUID 的前 8 個十六進位字元，轉大寫；不是遞增序號，看不出「今天第幾筆訂單」。
+- **唯一性**：`OrderNumber` 欄位有資料庫層級的唯一索引（`varchar(50)`），但**下單流程本身沒有事先查重或衝突重試**——完全仰賴 GUID 亂數空間夠大（8 位十六進位＝32 bits）讓碰撞機率趨近於零；若真的撞號，結帳會直接因資料庫唯一約束擲例外中止，不會自動重新產生一組編號重試。以目前單一客戶部署的預期單量，這個機率風險可接受，但**不是**正式設計過的防碰撞機制。
+- **用途**：買家/客服對外溝通與訪客查單（`POST /api/v1/orders/lookup`，見 §5）、LINE 通知訊息（[23-service-notification.md](23-service-notification.md)）皆用這組編號，不是內部 `Order.Id`（GUID 主鍵）。
+
+這組規則**是否要正式定案為永久設計，還是改成更具業務意義的形式**（例如可讀性更高、可看出賣家/日序的編號規則，或加上防碰撞重試）**仍待決議**，見 §6。
 
 ## 3. 爸芭樂案例
 
@@ -127,5 +144,6 @@ sequenceDiagram
 ## 6. 待決議事項
 - [x] ~~Saga 補償失敗時（例如還原庫存本身也失敗）的最終處理與告警機制——這是全新的失敗模式，需要對應設計~~——**已解決**：見 §4.1 統一設計（`SagaCompensationFailure` 實體＋指數退避重試＋人工介入端點），[13-service-wms.md](13-service-wms.md) §6、[16-service-promotions.md](16-service-promotions.md) §6 同步標記已解決並回頭引用本節。即時推播告警仍是殘留缺口，見 §4.1 說明
 - [x] ~~Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計~~——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 已定案傳遞規則（Gateway 產生/沿用 `X-Correlation-Id`，逐服務強制轉發）；`/internal/v1/orders/support/{id}/trace` 的實作需確保 Saga 每一步（呼叫 Cart/WMS/Promotions/Vendor/Payment）都帶上同一組 Correlation ID 並寫入自己的結構化 log，才能依此 ID 查出跨服務的完整執行軌跡
-- [ ] 逾時未付款自動取消、訂單編號產生策略需另訂
+- [ ] 逾時未付款自動取消機制需另訂（多久算逾時、由誰觸發取消、是否需要背景排程服務）
+- [x] ~~訂單編號產生策略需另訂~~——**部分解決**：現況已補上文件（見 §2.1），`ORD{日期}{8 碼亂數}` 是 `ecommerce-services` 目前實際在跑的暫定方案，不再是只活在程式碼 TODO 裡的無文件狀態；但「是否正式定案為永久設計，或改成更具業務意義的編號規則/加上防碰撞重試」本身仍是開放問題，未來要調整前先看 §2.1 現況說明
 - [ ] §4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支（僅畫出庫存不足/優惠券失敗/Vendor 查詢失敗三種），文字說明第 7 點隱含此分支同樣觸發補償鏈，圖表待補齊，見 [10-gap-analysis.md](10-gap-analysis.md) §14

@@ -11,12 +11,13 @@
 | v0.6 | 2026-09-09 | ordinarycas | 同步 [11-service-identity.md](11-service-identity.md) v0.3：Refresh Token 與撤銷機制已設計（§5.1），§4 移除對應列；改用腳本逐行核對 §2–§5 列數（而非手動心算），統計訂正為 70 項未解決 + 9 項已解決 |
 | v0.7 | 2026-09-09 | ordinarycas | 同步 [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查（新增消費者會員登入後的連鎖影響）：§3 新增訪客升級為會員機制列、§4 新增 Identity §5.1 適用範圍列與 Order Payment 失敗分支列，共 3 項新增（Gateway 路由不一致屬純格式錯誤已直接修正，不列入待決議）；§1 新增第 1 名（帳號安全新發現），改為前 6 名；統計更新為 73 項未解決 + 9 項已解決 |
 | v0.8 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§3 移除對應列，§1 移除第 1 名、還原為前 5 名；統計改用近期解決清單條列，訂正為 72 項未解決 + 10 項已解決 |
+| v0.9 | 2026-09-09 | ordinarycas | 同步 [17-service-order.md](17-service-order.md) v0.6、[07-storefront-requirements.md](07-storefront-requirements.md) v0.8：§4 原「Order / 逾時未付款自動取消、訂單編號策略需另訂」1 列拆成 2 列（訂單編號現況已補上文件，見源文件 §2.1）；首頁 3D 互動效果與 Identity Refresh Token 儲存方式的文件補寫不影響本表（皆非既有待決議項）；改用腳本逐行核對 §2–§5 列數，統計訂正為 73 項未解決 + 10 項已解決 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**72 項未解決** + 10 項已解決（逐行核對 §2–§5 表格列數所得，非估算；已解決項目不列入本表）。近期解決：反向代理引擎選型 YARP（[25](25-service-gateway.md)）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）、Identity Refresh Token（[11](11-service-identity.md) §5.1）、**訪客升級為會員的信箱驗證時機**（[11](11-service-identity.md) §5.1，2026-09-09 使用者確認）。
+統計：**73 項未解決** + 10 項已解決（逐行核對 §2–§5 表格列數所得，非估算；已解決項目不列入本表）。本輪 §4 原「Order / 逾時未付款自動取消、訂單編號策略需另訂」1 列拆成 2 列（源文件 [17-service-order.md](17-service-order.md) §6 同步拆分，訂單編號部分現況已補上文件但正式定案與否仍待決議，未計入已解決），故未解決數 +1、已解決數不變。近期解決：反向代理引擎選型 YARP（[25](25-service-gateway.md)）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）、Identity Refresh Token（[11](11-service-identity.md) §5.1）、**訪客升級為會員的信箱驗證時機**（[11](11-service-identity.md) §5.1，2026-09-09 使用者確認）。
 
 ## 1. 前 5 項建議優先處理（依風險/急迫性排序，非文件順序）
 
@@ -78,7 +79,8 @@
 | Cart | 訪客購物車自動清理排程未定（[15](15-service-cart.md) §5） |
 | Promotions | 優惠券是否可疊加使用（[16](16-service-promotions.md) §5） |
 | Promotions | `Coupon.Code` 唯一性範圍（[16](16-service-promotions.md) §5） |
-| Order | 逾時未付款自動取消、訂單編號策略需另訂（[17](17-service-order.md) §6） |
+| Order | 逾時未付款自動取消機制需另訂（[17](17-service-order.md) §6） |
+| Order | 訂單編號產生規則是否正式定案（現況已補上文件，見 [17](17-service-order.md) §2.1、§6） |
 | Order | Saga 循序圖遺漏 Payment 建立失敗的補償分支（[17](17-service-order.md) §6） |
 | Payment | 三家廠商沙箱實測（[18](18-service-payment.md) §8） |
 | Payment | 退款金流串接未實作（[18](18-service-payment.md) §8） |

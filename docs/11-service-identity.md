@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-09 | ordinarycas | 回應「新增消費者會員登入，先保留 Google、Line 登入」需求：新增 §5.1 消費者會員（Email+密碼）註冊/信箱驗證/忘記密碼/Refresh Token 完整流程設計；§2 新增 `RefreshToken`/`AccountActionToken` 實體與 `User.EmailVerifiedAt` 欄位；§5 API 大綱補上 7 個新端點；§6 Refresh Token 待決議項標記已解決；LINE/Google 維持既有保留狀態不變，本輪不涉及 |
 | v0.4 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增 2 項待決議——§5.1 適用範圍是否涵蓋 Seller/SellerStaff 待書面澄清、訪客升級為會員的自動關聯時機與信箱驗證的交互未定義（帳號冒領風險） |
 | v0.5 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§5.1 新增「訪客升級為會員」設計——沿用同一 `User.Id`（訂單本來就指向它，不需搬移資料），密碼暫存於新增的 `AccountActionToken.PendingPasswordHash`，驗證通過才寫入 `User.PasswordHash`；`register` 端點依 Email 是否已是無密碼訪客帳號分兩種行為；§2 `AccountActionToken` 補上該欄位；§6 對應待決議項標記已解決 |
+| v0.6 | 2026-09-09 | ordinarycas | §5.1 Refresh Token 儲存位置一段更新為「已依此實作」（原為建議）：`ecommerce-services` 完成 8 個端點真實作、`ecommerce-storefront` 完成 httpOnly Cookie BFF 前台實作，均已通過瀏覽器/docker-compose 實測，回應「把消費者會員登入串起來」與「把已經做出來但規格沒寫的東西補回文件」需求 |
 
 ## 1. 職責
 
@@ -77,7 +78,7 @@
 
 **忘記密碼**：`POST /api/v1/identity/forgot-password` 產生 `AccountActionToken`（`Purpose=PasswordReset`，1 小時有效）並寄出重設連結；**無論該 Email 是否存在對應帳號，一律回傳相同的成功訊息**，避免帳號列舉攻擊（呼應 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 既有的暴力破解/列舉防護原則）。`POST /api/v1/identity/reset-password` 驗證 Token 有效且未使用/未過期後更新 `PasswordHash`，Token 標記為已使用，並**同時撤銷該使用者所有現有 Refresh Token**（密碼重設後強制所有裝置重新登入，屬安全常規）。
 
-**Refresh Token（解決既有待決議事項）**：`login` 同時核發 Access Token（短效，如 30 分鐘）與 Refresh Token（長效，如 30 天，`RefreshToken.TokenHash` 僅存雜湊不存明文）。`POST /api/v1/identity/refresh-token` 換發新 Access Token 時採**輪替（Rotation）**：每次使用後舊 Refresh Token 立即失效、核發新的一組，降低 Token 遭竊後被長期濫用的風險。前台儲存位置：Access Token 存於記憶體，Refresh Token 建議以 httpOnly、Secure Cookie 存放（避免 XSS 情境下被 JS 讀取），透過 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5 既有的 Route Handler 代理模式轉發，不直接暴露給前端 JS。
+**Refresh Token（解決既有待決議事項）**：`login` 同時核發 Access Token（短效，如 30 分鐘）與 Refresh Token（長效，如 30 天，`RefreshToken.TokenHash` 僅存雜湊不存明文）。`POST /api/v1/identity/refresh-token` 換發新 Access Token 時採**輪替（Rotation）**：每次使用後舊 Refresh Token 立即失效、核發新的一組，降低 Token 遭竊後被長期濫用的風險。前台儲存位置：Access Token 存於記憶體，Refresh Token 以 httpOnly、Secure（正式環境）、SameSite=Lax Cookie 存放（避免 XSS 情境下被 JS 讀取），透過 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5 既有的 Route Handler 代理模式轉發，不直接暴露給前端 JS——`ecommerce-storefront` 已依此實作（`app/api/auth/*` BFF 路由＋`lib/auth-cookie.ts`），不再只是建議，見該 repo 自己的 README「會員登入」一節。
 
 **殘留缺口（誠實記錄）**：驗證信/重設密碼信的**實際寄送管道**依賴 Email 發送能力，但這是 [23-service-notification.md](23-service-notification.md) 既有待決議「Email/簡訊是否併入本服務」尚未定案的部分（見 [30-open-decisions-register.md](30-open-decisions-register.md) §4）——本節只設計到「產生 Token、提供驗證/重設端點」，實際寄信管道選型不在本次範圍內，該項待決議定案前，這兩個信件動作在實作上會缺一塊。
 

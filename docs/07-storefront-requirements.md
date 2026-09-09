@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-09 | ordinarycas | 回應「新增消費者會員登入，先保留 Google、Line 登入」需求：§3 補上登入/註冊、忘記密碼、會員中心三個頁面對應；§2 Email+密碼列補上 [11-service-identity.md](11-service-identity.md) §5.1 詳細流程的交叉引用。LINE/Google 維持既有保留狀態不變，未異動 |
 | v0.6 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§1「訪客升級為會員」機制與 [11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證流程存在帳號冒領風險，本文件本身不解決該問題（涉及 Identity Service 設計，非前台需求範疇），僅於 §5 新增對應待決議項記錄 |
 | v0.7 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§1 更新訪客升級為會員的說明（沿用同一 `User.Id`，需驗證才能登入），§5 對應待決議項標記已解決，機制細節見 [11-service-identity.md](11-service-identity.md) §5.1 |
+| v0.8 | 2026-09-09 | ordinarycas | §3 首頁列新增 §3.1 交叉引用；新增 §3.1 記錄 `ecommerce-storefront` 已實作的首頁互動 3D 芭樂效果（原本只活在程式碼與元件註解裡），回應「把已經做出來但規格沒寫的東西補回文件」需求 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -40,7 +41,7 @@
 
 | 頁面 | 對應服務 | 生成方式（見 [06](06-ecommerce-platform-architecture.md) §5） |
 |---|---|---|
-| 品牌形象首頁 | CMS Service | SSG |
+| 品牌形象首頁（含互動 3D 芭樂，見 §3.1） | CMS Service | SSG |
 | 商品清單/分類頁 | Catalog Service | ISR |
 | 商品詳情頁 | Catalog Service（商品資訊）+ WMS Service（是否有現貨）+ Reviews Service（評價列表，受 `StoreSettings.ReviewsVisible` 控制） | SSG（熱銷商品）/ ISR（其餘） |
 | 購物車 | Cart Service | CSR |
@@ -50,6 +51,20 @@
 | 會員中心頁（個人資料、信箱驗證狀態、地址簿） | Identity Service | CSR |
 | 訂單查詢頁（會員） | Order Service（依登入身分查詢） | CSR |
 | 訂單查詢頁（訪客） | Order Service（訂單編號 + Email） | CSR |
+
+### 3.1 首頁固定視覺效果：互動式 3D 芭樂（現況記錄）
+
+`ecommerce-storefront` 首頁已實作一個互動式 3D 芭樂模型（呼應賣家品牌「爸芭樂」與熱銷商品「紅心芭樂」），先前只以元件內的說明註解存在，未回頭寫進本文件：
+
+| 項目 | 說明 |
+|---|---|
+| 呈現方式 | 純 three.js 程序化建模（`LatheGeometry` 車出果身輪廓＋果蒂＋葉片），**不載入任何外部 3D 模型或貼圖檔**——不增加 SSG 產物體積，也沒有跨網域資源請求 |
+| 互動：旋轉 | 拖曳（滑鼠／觸控皆可）旋轉；放開後保留慣性、逐漸衰減；閒置一段時間後緩慢自轉 |
+| 互動：切開 | 點擊，或聚焦後按 Enter／空白鍵：整顆↔剖半切換，剖面露出果肉與籽（呼應「紅心芭樂」商品名稱） |
+| 無障礙 | 容器為 `role="button"`、可鍵盤聚焦（`tabIndex`），切開狀態以 `aria-pressed` 表達，另有 `aria-label` 描述用途；提示文案與無障礙標籤走三語字典（[28-i18n.md](28-i18n.md) §5 UI 文字），不是 Translation 表的動態內容 |
+| `prefers-reduced-motion` | 使用者開啟「減少動態效果」時，關閉閒置自轉與切換彈跳動畫，僅保留拖曳旋轉、切開/合起這類使用者直接觸發的操作 |
+
+**與 CMS Service 的關係**：這是首頁模板裡**寫死**的固定視覺效果，不透過 CMS Service 的 `PageSection`/`Config` 機制管理，賣家後台無法關閉或替換它——與同一頁面上其餘走 CMS 管理的內容區塊（Banner／RichText 等）是不同性質的東西，屬於「爸芭樂」這個範例案例本身的品牌呈現，比照白牌客戶各自客製首頁模板的預期（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），不是每個白牌客戶都會有的通用平台功能。首頁其餘文字內容目前仍是佔位文案、尚未實際接上 CMS Service 查詢，這點屬於既有已知缺口，不是本節新增的設計。
 
 ## 4. 商品詳情頁的現貨顯示
 
