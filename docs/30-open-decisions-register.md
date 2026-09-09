@@ -16,12 +16,13 @@
 | v0.11 | 2026-09-10 | ordinarycas | 繼續逐項處理待決議事項：本輪解決 11 項——`StoreSettings` 歸屬定案 Vendor Service（連帶解決 §6 重複追蹤列）、Catalog 搜尋效能（pg_trgm，已於 `ecommerce-services` 實作+實測）、Gateway 4 項（速率限制/Webhook/公開建單/聚合文件，連帶解決 §6 重複追蹤列與 [09](09-api-specification.md) 的重複項）、優惠券不可疊加、`Coupon.Code` 賣家範圍唯一（皆核對既有實作定案）、評價審核機制、訪客購物車清理排程；§1 優先清單因 `StoreSettings` 解決縮減為前 4 名；統計訂正為 57 項未解決 + 25 項已解決 |
 | v0.12 | 2026-09-10 | ordinarycas | 處理 §2 ShyeCMS 剩餘 7 項：3 項可技術/流程判斷已解決（`PastDue` SOP、開通部署現階段人工、`Suspended` 訊息文案），4 項屬合約/商業模式判斷（濫用舉證、GMV 計費相關 2 項、終止合作資料政策），不強行代為決定，改為標記「需要業主決策」並補上具體待答子問題，讓開放狀態本身更可執行；統計訂正為 54 項未解決 + 28 項已解決 |
 | v0.13 | 2026-09-10 | ordinarycas | 修正 v0.11 遺漏——Catalog 商品搜尋效能已當輪解決但忘記移出對應列，本輪補上移除；處理 §3/§4 剩餘項目共 19 列：17 項可技術/設計判斷已解決（部分為「設計已補齊、實際串接/實作仍待沙箱環境或未來排入」的誠實記錄，非完全落地——WMS 3 項、Vendor 多賣家管理員角色、Order 逾時付款、Payment 退款/對帳設計、Media 影片縮圖設計/CDN、CMS Page Builder、Shipping 溫控物流、Analytics 查詢效能/匯出設計、Notification 3 項），Payment 沙箱實測與 Shipping 超商門市選擇標記「需要外部資源」維持開放，LINE/Google OAuth 標記「需要業主決策」並去重（§4 Identity 列併入 §3 對應列，純粹合併非解決）；改用腳本逐行核對，統計訂正為 34 項未解決 + 45 項已解決（已解決數為累計手動追蹤，逐項列名核對而非心算，避免重蹈 v0.5 的計數錯誤） |
+| v0.14 | 2026-09-10 | ordinarycas | §3 收尾：解決 9 項（DB 連線安全性、Supabase 連線數改走 pooler、CI/CD 建置機器、訪客結帳簡訊防詐、PlatformSupportStaff 診斷端點盤點——順手在 Promotions/Notification 補上原本遺漏的診斷端點、即時通知、會員資訊遮罩、Grouped 商品 WooCommerce 語意——過程中發現並訂正 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 一處實際的分隔符號錯誤、匯出連結時效）；統計說明改為明確點出剩餘項目裡多少是「需要業主決策/外部資源」而非規格能單方面解決；統計訂正為 25 項未解決 + 54 項已解決 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**34 項未解決** + 45 項已解決（未解決數逐行核對 §2–§5 表格列數所得，非估算；已解決數為累計手動追蹤，逐項列名核對而非心算，已解決項目不列入本表）。§2 剩餘 4 項、§3 LINE/Google OAuth 1 項、§4 Payment/Shipping 各 1 項，皆標記「需要業主決策」或「需要外部資源」，非技術判斷可單方面解決。本輪解決 17 項（Catalog/vendor-admin 稅務欄位合併計 1 項）：WMS 3 項（多倉排除、效期商品排程、Catalog 呼叫失敗降級行為澄清為架構前提不成立）、Vendor 多賣家管理員角色延後至多賣家入駐核准後、Order 逾時付款自動取消定案、Payment 退款/對帳 2 項補齊設計（實作待沙箱環境）、Media 2 項（影片縮圖補齊設計待實作、CDN 現階段不需要）、CMS Page Builder 定案簡化版、Shipping 溫控物流定案、Analytics 2 項（查詢效能定案、匯出補齊設計待實作）、Notification 3 項（LINE OA 歸屬定案站台統一、API 費用查證官方公開資訊、Email 併入本服務解除 Identity 驗證信既有卡點）；同時修正上一版遺漏移出的 Catalog 搜尋效能列，並將 §4 原「Identity | LINE/Google OAuth」重複列合併進 §3 對應列（純粹去重，非解決）。近期解決（前一輪 3 項）：`ClientSubscription.PastDue` 處理 SOP 定案（[02-data-model.md](02-data-model.md) §6）、開通部署現階段維持人工（[03-client-lifecycle.md](03-client-lifecycle.md) §7）、`Suspended` 狀態訊息文案定案（[03-client-lifecycle.md](03-client-lifecycle.md) §7）。更早解決：`StoreSettings` 定案歸屬 Vendor Service（[14](14-service-vendor.md) §5、[20](20-service-cms.md) §5）、Gateway 速率限制/Webhook/公開建單 API/聚合文件呈現方式共 4 項（[25](25-service-gateway.md) §7）、內部 API 是否對外揭露文件（[09](09-api-specification.md) §4）、優惠券不可疊加使用（[16](16-service-promotions.md) §6）、`Coupon.Code` 唯一性範圍為賣家範圍內唯一（[16](16-service-promotions.md) §6）、評價審核機制定案事後審核（[24](24-service-reviews.md) §5）、訪客購物車 30 天清理排程（[15](15-service-cart.md) §5）、Saga 循序圖 Payment 建立失敗分支（[17](17-service-order.md) §4、[06](06-ecommerce-platform-architecture.md) §7）、Identity §5.1 適用範圍書面澄清（[11](11-service-identity.md) §5.1）、PostgreSQL 共用 instance 多 schema 定案（[06](06-ecommerce-platform-architecture.md) §6.4）、`services/*/Dockerfile` 已撰寫並實測（[26](26-project-structure.md) §7）、反向代理引擎選型 YARP（[25](25-service-gateway.md)）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）、Identity Refresh Token（[11](11-service-identity.md) §5.1）、訪客升級為會員的信箱驗證時機（[11](11-service-identity.md) §5.1）。
+統計：**25 項未解決** + 54 項已解決（未解決數逐行核對 §2–§5 表格列數所得，非估算；已解決數為累計手動追蹤，逐項列名核對而非心算，已解決項目不列入本表）。剩餘項目裡，§2 4 項、§3 2 項（LINE/Google OAuth、服務資源消耗）、§4 2 項，皆標記「需要業主決策」或「需要外部資源/實測」，非技術判斷可單方面解決——換句話說，**剩餘 25 項裡有 8 項本來就不是規格文件能單方面關閉的**，真正還「有機會」透過規格/設計工作解決的是 §5 跨服務/基礎設施剩餘的 16 項。本輪（§3 收尾）解決 9 項：DB 連線安全性/Supabase 連線數（已查證官方資訊改走 pooler）/CI/CD 建置機器 3 項、訪客結帳簡訊防詐定案分層處理不強制、PlatformSupportStaff 診斷端點盤點完成（順手在 Promotions/Notification 補上 2 個發現的遺漏端點並各自新增支撐用的 log 實體）、即時通知定案不需要、會員資訊遮罩顯示定案、Grouped 商品 WooCommerce 語意核對時**發現並訂正一處實際錯誤**（分隔符號逗號應為 `|`，原假設有誤）、匯出連結時效定案 30 分鐘。近期解決（前一輪 17 項）：Catalog/vendor-admin 稅務欄位、WMS 3 項、Vendor 多賣家管理員角色延後、Order 逾時付款、Payment 退款/對帳設計、Media 2 項、CMS Page Builder、Shipping 溫控物流、Analytics 2 項、Notification 3 項。更早解決的完整清單見上方異動紀錄 v0.1–v0.13。
 
 ## 1. 前 4 項建議優先處理（依風險/急迫性排序，非文件順序）
 
@@ -47,17 +48,8 @@
 
 | 項目 | 來源 |
 |---|---|
-| 服務數量在單一 VPS 部署下的資源消耗未經實測校正 | [06](06-ecommerce-platform-architecture.md) §10 |
-| 外部/內部 DB 模式的網路延遲與安全性未規劃 | [06](06-ecommerce-platform-architecture.md) §10 |
-| Supabase 免費/低階方案的連線數上限是否足夠 | [06](06-ecommerce-platform-architecture.md) §10 |
-| CI/CD 建置機器的規格未定 | [06](06-ecommerce-platform-architecture.md) §10 |
+| 服務數量在單一 VPS 部署下的資源消耗，**需要實測**（非規格能解決） | [06](06-ecommerce-platform-architecture.md) §10 |
 | LINE / Google OAuth 實際串接時程，**需要業主決策**（排程/資源分配） | [07](07-storefront-requirements.md) §5、[11](11-service-identity.md) §6 |
-| 訪客結帳是否需要簡訊驗證等防詐機制 | [07](07-storefront-requirements.md) §5 |
-| `PlatformSupportStaff` 白名單診斷操作清單需逐服務盤點 | [08](08-vendor-admin-requirements.md) §6 |
-| `PlatformSupportStaff` 存取是否需要即時通知客戶端 | [08](08-vendor-admin-requirements.md) §6 |
-| 唯讀範圍是否需要對會員 Email/電話遮罩顯示 | [08](08-vendor-admin-requirements.md) §6 |
-| Grouped 商品的 WooCommerce 語意核對 | [08](08-vendor-admin-requirements.md) §6 |
-| 匯出檔案下載連結的時效與存取權限 | [08](08-vendor-admin-requirements.md) §6 |
 
 ## 4. 15 個微服務（[11](11-service-identity.md)–[25](25-service-gateway.md)）
 

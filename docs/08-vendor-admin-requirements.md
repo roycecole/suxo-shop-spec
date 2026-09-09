@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-08 | ordinarycas | §1 補上 Promotions/Shipping/Reviews 三個服務的賣家後台管理介面需求（後端 API 已在各自服務文件補齊，見 [10-gap-analysis.md](10-gap-analysis.md) §12）；§2 移除 `StoreSettings.GuestCheckoutEnabled`——訪客結帳是 [07-storefront-requirements.md](07-storefront-requirements.md) §1 訂定的平台鎖定硬性需求，不應做成賣家可自行關閉的功能開關，此為前一輪複查發現的矛盾（見 10-gap-analysis.md §12） |
 | v0.6 | 2026-09-08 | ordinarycas | §4.3 移除角色列舉裡的「Admin」——[11-service-identity.md](11-service-identity.md) §2 目前定案的 `User.Role` 枚舉本來就沒有這個值，[05-scope-and-open-items.md](05-scope-and-open-items.md) 也明確排除本輪的平台管理員規格，此處純屬文字誤植，非保留給未來的角色 |
 | v0.7 | 2026-09-10 | ordinarycas | §6 稅務欄位待決議項已解決：定案不新增，維持匯出固定值，回應「將待決議事項列出來實作」需求 |
+| v0.8 | 2026-09-10 | ordinarycas | §5.3 訂正 Grouped 商品匯出分隔符號錯誤（逗號→`|`，查證 WooCommerce 官方格式後發現）；§6 解決其餘 5 項待決議：PlatformSupportStaff 診斷端點盤點（順手補上 Promotions/Notification 兩個遺漏端點）、即時通知定案不需要、會員資訊遮罩顯示定案、匯出連結時效定案 30 分鐘，回應「將待決議事項列出來實作」需求 |
 
 > 針對「爸芭樂」微服務平台的賣家角色具體化，並新增拾夜科技支援權限章節（第 4 節）。不含客戶自己的「平台管理員」規格（賣家審核、全站金流物流設定、客訴仲裁）——爸芭樂案例暫定為單一賣家自營，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2。
 
@@ -125,7 +126,7 @@ WooCommerce CSV 用「多列」表示一個變體商品：第一列是父商品�
 2. 依 `Product.ProductVariation` 逐筆輸出子列：`Type=variation`、`Parent={父商品SKU}`、`SKU={變體SKU}`、`Regular price`/`Stock` 取自該變體。
 3. 變體對應的屬性（如「顏色=紅、尺寸=M」）需要先在父列宣告 `Attribute 1 name`/`Attribute 2 name`（即 `ProductAttribute.Name`），子列填對應的 `Attribute 1 value(s)` 等（即 `ProductAttributeValue.Value`）。
 
-`Product.Type = Grouped` 的商品，WooCommerce 對應欄位是 `Grouped products`（填組內商品 SKU，逗號分隔），本輪先以此欄位對應，實際串接時需確認我們的 Grouped 語意與 WooCommerce 一致。
+`Product.Type = Grouped` 的商品，WooCommerce 對應欄位是 `Grouped products`（填組內商品 SKU）。**分隔符號已核對訂正**：原先假設逗號分隔，經查證 WooCommerce 官方匯出格式實際用**直線符號 `|`分隔**（如 `SKU1|SKU2|SKU3`；若以 ID 對應則為 `id:100|id:101`），逗號是錯的假設，匯出實作需採 `|` 分隔，否則匯入 WooCommerce 端會整串被當成一個 SKU 而失敗。
 
 ### 5.4 資料模型的必要新增
 
@@ -150,12 +151,23 @@ WooCommerce CSV 用「多列」表示一個變體商品：第一列是父商品�
 - **不含 WooCommerce 反向匯入**（把 WooCommerce 資料匯入我們平台）——本功能單向解決「離開時怎麼帶走商品資料」，不處理新客戶從 WooCommerce 搬過來的匯入需求（那是另一個獨立功能，可比照本文件的欄位對照表反向設計，但需另外規劃）。
 
 ## 6. 待決議事項
-- [ ] `PlatformSupportStaff` 的白名單診斷操作清單需要逐服務盤點（Order/Payment/WMS 各自可能有不同的「安全重試」動作）
-- [ ] 是否需要要求 `PlatformSupportStaff` 存取時客戶端能即時看到通知（如「拾夜科技支援人員 A 於 14:32 登入查看訂單 #123」），提升透明度但增加開發成本
-- [ ] 唯讀範圍是否需要對會員 Email/電話做遮罩顯示（如 `t***@example.com`）而非完全不可見，兼顧支援效率與隱私
+- [x] ~~`PlatformSupportStaff` 的白名單診斷操作清單需要逐服務盤點~~——**已解決（盤點完成，順手補上 2 個發現的缺漏端點）**：
+
+| 服務 | 現有診斷端點 | 用途 |
+|---|---|---|
+| Order | `GET /internal/v1/orders/support/{id}/trace`、`GET /internal/v1/orders/support/compensation-failures` | 查 Saga 執行軌跡、查待人工介入的補償失敗清單 |
+| WMS | `GET /internal/v1/wms/support/stock-ledger/{productId}` | 查庫存異動歷程 |
+| Payment | `GET /internal/v1/payments/support/{orderId}/callback-log` | 查金流回調紀錄 |
+| Promotions | `GET /internal/v1/promotions/support/{code}/usage-log`（**本次補上，原本遺漏**） | 查優惠券使用/還原歷程 |
+| Notification | `GET /internal/v1/notifications/support/failed-log`（**本次補上，原本遺漏**） | 查重試 4 次仍失敗的 LINE 推播清單 |
+| Cart／Catalog／Media／CMS／Analytics／Shipping／Vendor／Reviews／Gateway／Identity | 無 | 這些服務沒有「補償/重試會卡住」的非同步失敗狀態（多為同步 CRUD），目前沒有已知需要診斷端點的情境，維持沒有 |
+
+盤點依據：本規格庫已設計的 Saga 補償統一模式（[17-service-order.md](17-service-order.md) §4.1）——凡是 Saga 補償參與者（WMS、Promotions）或有自己重試機制的非同步流程（Payment 回調、Notification 推播），都該有唯讀診斷端點；純同步 CRUD 服務目前沒有對應需求。Promotions 與 Notification 原本各自遺漏，已在 [16-service-promotions.md](16-service-promotions.md)、[23-service-notification.md](23-service-notification.md) 補上（含 Promotions 新增 `CouponUsageLog` 實體支撐查詢）
+- [x] ~~是否需要要求 `PlatformSupportStaff` 存取時客戶端能即時看到通知~~——**已解決：現階段不需要，AuditLog 已足夠**。理由：即時通知需要額外的推播管道（比照 [23-service-notification.md](23-service-notification.md) 的 LINE 推播基礎設施，或另建 Email 通知），對「支援人員查看一筆訂單」這種相對低風險、高頻率的操作即時通知客戶，效益與開發成本不成比例，且可能造成不必要的客戶焦慮（每次支援人員例行查詢都推播，反而稀釋掉真正異常存取的警示效果）。既有的 `AuditLog` 已完整記錄每次存取的人員/時間/對象，客戶如有疑慮可要求提供存取紀錄，事後可稽核已滿足透明度需求，不需要做成即時推播
+- [x] ~~唯讀範圍是否需要對會員 Email/電話做遮罩顯示（如 `t***@example.com`）而非完全不可見~~——**已解決：需要，預設遮罩顯示**。`PlatformSupportStaff` 查詢會員相關資料（訂單詳情、Saga trace 等）時，Email 顯示為 `t***@example.com`（保留首字元＋網域）、電話顯示為 `09XX-XXX-123`（保留區碼與末3碼）格式，兼顧「支援人員能辨識/核對是不是同一個人」與隱私最小化原則；如遇到真的需要完整聯絡資訊處理客訴的情境（如需要回電），另外設計「檢視完整資訊」的明確動作並寫入 `AuditLog`（誰在何時查看了誰的完整聯絡資訊），不做成預設全露出
 - [x] ~~稅務欄位（`Tax status`/`Tax class`）匯出固定值是否足夠，或需要在 Catalog.Product 正式新增稅務欄位~~——**已解決：固定值已足夠，不新增欄位**，理由見 [12-service-catalog.md](12-service-catalog.md) §6
-- [ ] Grouped 商品的 WooCommerce 語意核對（見 5.3）
-- [ ] 匯出檔案的下載連結時效與存取權限（比照 Media Service 既有的檔案存取控管機制）
+- [x] ~~Grouped 商品的 WooCommerce 語意核對~~——**已解決（且發現並訂正一處實際錯誤）**：查證 WooCommerce 官方 CSV 匯出格式後，發現本文件先前假設的「逗號分隔」是錯的，實際為 `|`（直線符號）分隔，已於 §5.3 訂正——這個差異如果沒抓到，匯出的 CSV 匯入 WooCommerce 時會直接失敗或誤判，是本次「列出待決議事項逐項處理」意外揪出的真實缺陷，不只是走個確認流程
+- [x] ~~匯出檔案的下載連結時效與存取權限（比照 Media Service 既有的檔案存取控管機制）~~——**已解決：簽章網址（Signed URL），30 分鐘時效**。WooCommerce CSV 等匯出檔案產生後，回傳一個帶時效簽章的下載連結（比照 Media Service 私有檔案的存取模式），30 分鐘內有效，逾時需重新觸發匯出；不做成永久公開連結，避免連結外流後任何人都能下載商店的商品/訂單資料。與[19-service-media.md](19-service-media.md) 的差異：Media 的簽章網址是給前台公開圖片以外的私有素材用，這裡是給賣家自己觸發的批次匯出檔案用，時效更短（30 分鐘 vs Media 可能需要的更長時效），因為匯出檔案的使用情境是「觸發後立刻下載」，不是「長期保存的連結」
 
 ## 7. RWD / PWA
 

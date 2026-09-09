@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | §4 補上具體重試參數（先前只寫「僅記錄並重試」），解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的缺口 |
 | v0.3 | 2026-09-10 | ordinarycas | §7 解決 3 項待決議：LINE OA 定案站台統一一組、LINE API 費用查證官方公開資訊完成量級評估、Email 併入本服務(簡訊現階段不做)並解除 Identity 驗證信的既有卡點，回應「將待決議事項列出來實作」需求 |
+| v0.4 | 2026-09-10 | ordinarycas | §6 修正 LINE OA 綁定端點描述以呼應 v0.3 的站台統一定案（原文字仍是賣家各自綁定的舊語意，未同步更新）；新增 PlatformSupportStaff 失敗推播診斷端點，回應 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6「診斷端點逐服務盤點」發現本服務原本遺漏這塊 |
 
 ## 1. 職責
 
@@ -39,10 +40,11 @@ LINE 官方帳號整合（LINE Messaging API）、通知派送。讓賣家不需
 
 | Method & Path | 說明 | 認證 |
 |---|---|---|
-| `POST /api/v1/vendor/line-oa/bind` | 賣家綁定自己的 LINE 官方帳號 | 賣家 |
-| `DELETE /api/v1/vendor/line-oa/bind` | 解除綁定 | 賣家 |
+| `POST /api/v1/vendor/line-oa/bind` | 綁定站台唯一一組 LINE 官方帳號（§7 已定案站台統一，非賣家各自）——目前介面仍掛在賣家後台，因為現況也確實只有一個賣家，語意上這是**站台設定**而非賣家個人設定；若未來開放多賣家入駐，需要遷移到平台管理員專屬設定，不再對一般賣家開放 | 賣家（暫代，見上方說明） |
+| `DELETE /api/v1/vendor/line-oa/bind` | 解除綁定 | 賣家（暫代，同上） |
 | `POST /api/v1/line-oa/webhook` | LINE 平台 Webhook 接收端點 | 對外開放（簽章驗證） |
 | `POST /internal/v1/notifications/order-events` | Order Service 非同步呼叫：新訂單/狀態變更通知 | 內部 |
+| `GET /internal/v1/notifications/support/failed-log` | 供 `PlatformSupportStaff` 查詢重試 4 次仍失敗（`Status=Failed`）的 LINE 推播清單，用於排查推播異常 | 內部 + PlatformSupportStaff |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 

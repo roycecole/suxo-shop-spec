@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-08 | ordinarycas | 新增 §4 併發保護機制，套用 [13-service-wms.md](13-service-wms.md) §4 已定案的原子條件更新模式，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的優惠券使用次數併發缺口；§5（原 §4）API 大綱補上編輯/刪除優惠券端點，回應賣家後台優惠券管理需求（見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1） |
 | v0.5 | 2026-09-09 | ordinarycas | §6 Saga 補償失敗待決議項標記已解決，統一設計見 [17-service-order.md](17-service-order.md) §4.1 |
 | v0.6 | 2026-09-09 | ordinarycas | §2 補上 Coupon.VendorId 欄位；§6 解決 2 項待決議：優惠券不可疊加使用、Code 唯一性範圍為賣家範圍內唯一（皆核對 `ecommerce-services` 既有實作後定案），回應「將待決議事項列出來實作」需求 |
+| v0.7 | 2026-09-10 | ordinarycas | §2 新增 CouponUsageLog 實體、§5 新增對應的 PlatformSupportStaff 診斷端點——回應 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6「診斷端點逐服務盤點」發現本服務原本遺漏這塊 |
 
 ## 1. 職責
 
@@ -19,6 +20,7 @@
 | 實體 | 說明 |
 |---|---|
 | Coupon | VendorId（優惠券歸屬某個賣家）、Code（**VendorId + Code 唯一**，見 §6）、DiscountType（FixedAmount/Percentage）、Amount、MinimumSpend、UsageLimit/UsageLimitPerUser、StartAt/ExpiryAt、適用範圍（分類/商品限定） |
+| CouponUsageLog | 優惠券使用/還原歷程（`CouponId`、`OrderId`、`Action`：`Used`/`Reverted`、`CreatedAt`），供 `PlatformSupportStaff` 排查併發或補償異常——比照 [13-service-wms.md](13-service-wms.md) §2 `StockLedger` 的既有模式，本服務先前遺漏這張表，只靠 `Coupon.UsedCount` 這個計數器沒有歷史軌跡可查 |
 | Translation | EntityType（"Coupon"）、EntityId、LocaleCode、FieldName（如優惠券顯示文案）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
 
 ## 3. 爸芭樂案例
@@ -45,6 +47,7 @@ UPDATE Coupons SET UsedCount = UsedCount + 1 WHERE Id = @CouponId AND UsedCount 
 | `DELETE /api/v1/vendor/coupons/{id}` | 刪除/停用優惠券 | 賣家 |
 | `POST /internal/v1/promotions/validate` | 結帳 Saga 內部呼叫：驗證優惠券並計算折扣、使用次數 +1（原子更新，見 §4） | 內部（僅 Order Service） |
 | `POST /internal/v1/promotions/{code}/revert` | Saga 補償：還原優惠券使用次數 | 內部 |
+| `GET /internal/v1/promotions/support/{code}/usage-log` | 供 `PlatformSupportStaff` 唯讀查詢優惠券使用/還原歷程，用於排查併發或補償異常（比照 [13-service-wms.md](13-service-wms.md) §4 `StockLedger` 診斷端點的既有模式，本服務先前遺漏對應端點） | 內部 + PlatformSupportStaff |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
