@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | `Payment` 補上 `ProviderTransactionId` 欄位與 `(Provider, ProviderTransactionId)` 唯一索引，把 §4「重複識別」從文字承諾落實成資料層保證；§2 補充說明 COD 不屬於本表的金流廠商，啟用與否唯一歸屬 [14-service-vendor.md](14-service-vendor.md) 的 `StoreSettings.CodPaymentEnabled`（見 [10-gap-analysis.md](10-gap-analysis.md) §10、§11） |
+| v0.3 | 2026-09-10 | ordinarycas | §8 處理 3 項待決議：沙箱實測標記為需要外部資源（金流商測試環境憑證），退款串接與對帳排程補上完整設計（實際 API 串接仍待沙箱環境），回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -60,6 +61,6 @@ HashKey/HashIV 以 Data Protection 加密後存入資料庫，後台不回傳明
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
 ## 8. 待決議事項
-- [ ] 三家廠商的沙箱實測（驗章邏輯需單元測試涵蓋，但未對接真實測試環境）
-- [ ] 退款金流串接：目前狀態機有 Refunded，但沒有實際呼叫金流商退款 API
-- [ ] 對帳排程：回調成功即標記 Paid，若當下資料庫寫入失敗，金流商已收款而系統未記錄，需補「對帳排程」主動向金流商查詢核對
+- [ ] **無法由本規格庫解決（需要外部資源）**：三家廠商的沙箱實測（驗章邏輯需單元測試涵蓋，但未對接真實測試環境）——需要向綠界/藍新/等金流商申請商店測試環境憑證（MerchantID、HashKey/HashIV 等），這是要向廠商申請的帳號資源，不是規格或程式碼能單方面解決的事，維持開放，等實際申請到測試環境後才能進行
+- [x] ~~退款金流串接：目前狀態機有 Refunded，但沒有實際呼叫金流商退款 API~~——**部分解決（設計已補齊，實作仍待沙箱環境）**：流程定案為「賣家在後台對某筆訂單發起退款 → Payment Service 檢查 `PaymentStatus=Paid` 才允許 → 呼叫金流商的退款 API（ECPay `AllPay.ECPayAPI` 的信用卡負向交易，或藍新對應端點）→ 成功則 `PaymentStatus` 轉 `Refunded`、寫入 `PaymentCallbackLog`，失敗則維持原狀態並回報賣家重試」。**仍待實作**：實際串接退款 API 需要真實的金流商串接文件與沙箱環境（見上一項待決議），本項設計本身不受此阻擋，先記錄下來避免又是一個只活在程式碼 TODO 裡的缺口
+- [x] ~~對帳排程：回調成功即標記 Paid，若當下資料庫寫入失敗，金流商已收款而系統未記錄，需補「對帳排程」主動向金流商查詢核對~~——**部分解決（設計已補齊，實作仍待沙箱環境）**：新增每日對帳背景排程（比照本規格庫已驗證過的背景 Worker 模式，見 [17-service-order.md](17-service-order.md) §4.1）：向各金流商查詢**前一天**的實際收款明細，逐筆比對 `PaymentCallbackLog`——(1) 金流商有收款但本服務無對應 `Paid` 記錄：標記為對帳異常，通知 `PlatformSupportStaff` 人工核對（比照 [17-service-order.md](17-service-order.md) §4.1 的人工介入模式，不自動修正金流資料）；(2) 本服務標記 `Paid` 但金流商查無此筆：同樣標記異常。**仍待實作**：金流商查詢 API 的實際串接同樣需要沙箱環境（見第一項待決議），設計本身已可作為之後實作的依據

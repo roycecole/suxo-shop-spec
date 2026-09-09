@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-08 | ordinarycas | §1 補充內容編輯採 Markdown 編輯器，回應「後台內容編輯使用 Markdown」需求 |
 | v0.5 | 2026-09-08 | ordinarycas | §1 補上 Promotions/Shipping/Reviews 三個服務的賣家後台管理介面需求（後端 API 已在各自服務文件補齊，見 [10-gap-analysis.md](10-gap-analysis.md) §12）；§2 移除 `StoreSettings.GuestCheckoutEnabled`——訪客結帳是 [07-storefront-requirements.md](07-storefront-requirements.md) §1 訂定的平台鎖定硬性需求，不應做成賣家可自行關閉的功能開關，此為前一輪複查發現的矛盾（見 10-gap-analysis.md §12） |
 | v0.6 | 2026-09-08 | ordinarycas | §4.3 移除角色列舉裡的「Admin」——[11-service-identity.md](11-service-identity.md) §2 目前定案的 `User.Role` 枚舉本來就沒有這個值，[05-scope-and-open-items.md](05-scope-and-open-items.md) 也明確排除本輪的平台管理員規格，此處純屬文字誤植，非保留給未來的角色 |
+| v0.7 | 2026-09-10 | ordinarycas | §6 稅務欄位待決議項已解決：定案不新增，維持匯出固定值，回應「將待決議事項列出來實作」需求 |
 
 > 針對「爸芭樂」微服務平台的賣家角色具體化，並新增拾夜科技支援權限章節（第 4 節）。不含客戶自己的「平台管理員」規格（賣家審核、全站金流物流設定、客訴仲裁）——爸芭樂案例暫定為單一賣家自營，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2。
 
@@ -152,7 +153,7 @@ WooCommerce CSV 用「多列」表示一個變體商品：第一列是父商品�
 - [ ] `PlatformSupportStaff` 的白名單診斷操作清單需要逐服務盤點（Order/Payment/WMS 各自可能有不同的「安全重試」動作）
 - [ ] 是否需要要求 `PlatformSupportStaff` 存取時客戶端能即時看到通知（如「拾夜科技支援人員 A 於 14:32 登入查看訂單 #123」），提升透明度但增加開發成本
 - [ ] 唯讀範圍是否需要對會員 Email/電話做遮罩顯示（如 `t***@example.com`）而非完全不可見，兼顧支援效率與隱私
-- [ ] 稅務欄位（`Tax status`/`Tax class`）匯出固定值是否足夠，或需要在 Catalog.Product 正式新增稅務欄位
+- [x] ~~稅務欄位（`Tax status`/`Tax class`）匯出固定值是否足夠，或需要在 Catalog.Product 正式新增稅務欄位~~——**已解決：固定值已足夠，不新增欄位**，理由見 [12-service-catalog.md](12-service-catalog.md) §6
 - [ ] Grouped 商品的 WooCommerce 語意核對（見 5.3）
 - [ ] 匯出檔案的下載連結時效與存取權限（比照 Media Service 既有的檔案存取控管機制）
 

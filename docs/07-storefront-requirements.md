@@ -11,6 +11,7 @@
 | v0.6 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§1「訪客升級為會員」機制與 [11-service-identity.md](11-service-identity.md) §5.1 新增的信箱驗證流程存在帳號冒領風險，本文件本身不解決該問題（涉及 Identity Service 設計，非前台需求範疇），僅於 §5 新增對應待決議項記錄 |
 | v0.7 | 2026-09-09 | ordinarycas | 使用者確認「訪客升級會員的自動關聯要等信箱驗證通過」：§1 更新訪客升級為會員的說明（沿用同一 `User.Id`，需驗證才能登入），§5 對應待決議項標記已解決，機制細節見 [11-service-identity.md](11-service-identity.md) §5.1 |
 | v0.8 | 2026-09-09 | ordinarycas | §3 首頁列新增 §3.1 交叉引用；新增 §3.1 記錄 `ecommerce-storefront` 已實作的首頁互動 3D 芭樂效果（原本只活在程式碼與元件註解裡），回應「把已經做出來但規格沒寫的東西補回文件」需求 |
+| v0.9 | 2026-09-10 | ordinarycas | §5 LINE/Google OAuth 串接時程標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -73,7 +74,7 @@
 - 現貨/庫存狀態透過前端呼叫 WMS Service 的**唯讀查詢端點**，於頁面載入後以 CSR 方式覆蓋顯示（類似「載入中→現貨 12 件／已售完」），避免庫存數字被快取在靜態頁面裡而失真。
 
 ## 5. 待決議事項
-- [ ] LINE / Google OAuth 實際串接時程（沿用 v1 既有缺口，未在本輪排入）
+- [ ] **需要業主決策（非技術判斷）**：LINE / Google OAuth 實際串接時程（沿用 v1 既有缺口）——排程/資源分配問題，非規格能回答的技術決策，維持開放，見 [11-service-identity.md](11-service-identity.md) §6 同項
 - [ ] 訪客結帳是否需要簡訊驗證等防詐機制（生鮮商品退貨成本高，惡意下單風險需評估）
 - [x] ~~訪客升級為會員的確切機制未定義~~——**已解決**（使用者 2026-09-09 確認：要等信箱驗證通過）：§1 已更新，機制細節見 [11-service-identity.md](11-service-identity.md) §5.1
 

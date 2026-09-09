@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | §2 補上 `Translation` 表，落實 [28-i18n.md](28-i18n.md) §3 列出但本文件尚未實作的多語系需求 |
 | v0.4 | 2026-09-08 | ordinarycas | §4 新增賣家後台讀取目前草稿內容的 `GET` 端點——先前只有公開的「取得已發佈版型」，賣家編輯器無法載入尚未發佈的變更內容（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.5 | 2026-09-09 | ordinarycas | §5 標記 `StoreSettings` 歸屬待決議項已解決：定案歸屬 Vendor Service，回應「將待決議事項列出來實作」需求 |
+| v0.6 | 2026-09-10 | ordinarycas | §5 Page Builder 實作方式待決議項已解決：定案簡化版（既有 PageSection.Type 固定列舉設計即為答案），回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -42,5 +43,5 @@
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
 ## 5. 待決議事項
-- [ ] Page Builder 實作方式：自建拖拉式編輯器，還是先做「後台表單設定區塊參數」的簡化版
+- [x] ~~Page Builder 實作方式：自建拖拉式編輯器，還是先做「後台表單設定區塊參數」的簡化版~~——**已解決：簡化版，非自建拖拉式編輯器**。這其實已經是本文件 §2 資料模型的既有設計所隱含的答案，只是先前沒有把這個開放問題明確關閉：`PageSection.Type` 是**固定列舉**（`Banner`/`FeaturedCategories`/`ProductBlock`/`VendorSpotlight`/`RichText`/`Custom`），賣家後台是從這些預先定義好的區塊「類型」挑選、排序、填寫各自的 `Config` 參數（比照多數輕量電商後台如 Shopify 佈景主題編輯器的模式），不是自由拖拉排版的畫布式編輯器——若要做到真正拖拉式，`PageSection` 的資料模型需要整個重新設計（版面座標、巢狀元件樹等），遠超過目前規模需要的複雜度
 - [x] ~~`StoreSettings`（賣家自家功能開關）是否應歸屬本服務而非 Vendor Service~~——**已解決：定案歸屬 Vendor Service，不歸本服務**，理由與現況見 [14-service-vendor.md](14-service-vendor.md) §5

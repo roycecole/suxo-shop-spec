@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | 補上本文件唯一缺少的「API 大綱」章節（新增 §4，原 §4 待決議事項改為 §5），回應 [10-gap-analysis.md](10-gap-analysis.md) §10 已列的最高優先缺口；同步移除 §2 `StoreSettings` 範例欄位裡的 `GuestCheckoutEnabled`——訪客結帳是平台鎖定的硬性需求（見 [07-storefront-requirements.md](07-storefront-requirements.md) §1），不應是賣家可關閉的功能開關，詳見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §2 |
 | v0.3 | 2026-09-08 | ordinarycas | §2 補充說明 `CodPaymentEnabled` 是 COD 是否開放的唯一權威來源（[18-service-payment.md](18-service-payment.md) 不重複管轄，見其 v0.2）；§4 新增結帳 Saga 查詢抽成費率的內部端點，解決 [10-gap-analysis.md](10-gap-analysis.md) §11「`SubOrder.CommissionAmount` 計算來源未定義」 |
 | v0.4 | 2026-09-09 | ordinarycas | §2、§5 定案 `StoreSettings` 歸屬本服務（不歸 CMS Service），回應「將待決議事項列出來實作」需求，理由見 §5 |
+| v0.5 | 2026-09-10 | ordinarycas | §5 多賣家平台管理員角色待決議項已解決：延後到多賣家入駐本身核准後再設計，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -45,4 +46,4 @@
 
 ## 5. 待決議事項
 - [x] ~~`StoreSettings` 是否應歸屬本服務而非 CMS Service~~——**已解決：定案歸屬 Vendor Service**。理由：(1) 三個欄位（優惠券模組開關、COD 開關、評價可見度）本質是**商業規則配置**，與本服務既有的抽成費率、賣家子帳號同屬「賣家如何營運自己商店」的範疇，跟 CMS Service 負責的「首頁/形象頁版型」（內容/呈現）是不同性質；(2) `ecommerce-services` 的 `SuxoShop.Vendor.Domain` 從骨架階段就已經把 `StoreSettings` 建在本服務底下、有真實的 `GET`/`PUT /api/v1/vendor/settings` 端點，CMS Service 從未實作過這個實體——與其為了理論上的職責劃分搬動已經在用的程式碼，不如承認現況。[20-service-cms.md](20-service-cms.md) §5 對應待決議項同步標記已解決
-- [ ] 若未來開放多賣家入駐，需要補上賣家審核流程與對應的平台管理員角色、以及調整 `CommissionRate` 的 API（見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2）
+- [x] ~~若未來開放多賣家入駐，需要補上賣家審核流程與對應的平台管理員角色、以及調整 `CommissionRate` 的 API~~——**已解決：現階段不設計，延後到多賣家入駐真的核准時再做**。理由：「是否要開放多賣家入駐」本身還是未定案的商業模式問題（見 [05-scope-and-open-items.md](05-scope-and-open-items.md)、[10-gap-analysis.md](10-gap-analysis.md) §9），在還不確定要不要做多賣家之前先設計審核流程/管理員角色/費率調整 API，屬於為不確定會發生的情境超前設計；等「要開放多賣家」這個更上位的商業決策拍板後，再回頭一併設計

@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | `MediaAsset` 補上 `VendorId` 欄位——先前沒有歸屬欄位，無法對照 `VendorStorageQuota` 算出「這個賣家用了多少配額」（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
+| v0.3 | 2026-09-10 | ordinarycas | §7 解決 2 項待決議：影片縮圖補上 ffmpeg 技術設計（尚未實作）、CDN 加速定案現階段不需要，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -54,5 +55,5 @@
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
 ## 7. 待決議事項
-- [ ] 影片縮圖（需 ffmpeg，會增加映像檔體積與 CPU 需求）
-- [ ] CDN 加速是否需要
+- [x] ~~影片縮圖（需 ffmpeg，會增加映像檔體積與 CPU 需求）~~——**部分解決（設計已補齊，尚未實作）**：上傳影片時，於 Infrastructure 層呼叫系統安裝的 `ffmpeg`（`ffmpeg -i input.mp4 -ss 00:00:01 -vframes 1 thumbnail.jpg`，擷取第 1 秒畫面），產生的縮圖依既有圖片儲存流程處理（含 §4 的安全檢查）；Dockerfile 需在 runtime image 額外 `apt-get install ffmpeg`（目前 15 服務共用的 `mcr.microsoft.com/dotnet/aspnet:10.0` base image 不含 ffmpeg）。**仍待實作**：`ecommerce-services` 目前對任何檔案類型皆走同一套上傳流程（`VendorMediaController` 未區分圖片/影片），這是本規格庫目前唯一尚未動手實作的部分，記錄設計避免又成為只活在腦中的缺口
+- [x] ~~CDN 加速是否需要~~——**已解決：現階段不需要**。理由：本平台鎖定單一 VPS、每客戶獨立部署、非高流量（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），CDN 主要解決的是「地理distributed 使用者」與「大流量」兩個問題，與現況（單一客戶、單一地區的台灣買家）不符；先以應用伺服器直接回應媒體檔案，待客戶流量或地理分布真的需要時再評估導入

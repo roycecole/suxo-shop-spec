@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-09 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現：§6 新增待決議項——Saga 循序圖遺漏 Payment 建立失敗的補償分支 |
 | v0.6 | 2026-09-09 | ordinarycas | §2 補上 Order.OrderNumber 欄位、新增 §2.1 記錄 `ecommerce-services` 已實作的訂單編號產生規則（原本只活在程式碼的 TODO 註解裡）；§6 拆分原本混在一起的待決議項，訂單編號部分改為「現況已補上文件，正式定案與否仍待決議」，逾時未付款自動取消獨立成一項，回應「把已經做出來但規格沒寫的東西補回文件」需求 |
 | v0.7 | 2026-09-09 | ordinarycas | §2 補上 Order.Status 列舉值（原本只有欄位名、沒有值，與 SubOrder 那列不一致）；§4 循序圖補上「Payment 建立失敗」分支，核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 確認實際行為（`OrderStatus.Failed`、補償順序優惠券→庫存）後寫入；§6 對應待決議項標記已解決，回應「將待決議事項列出來實作」需求 |
+| v0.8 | 2026-09-10 | ordinarycas | §6 逾時未付款自動取消待決議項已解決：定案 30 分鐘門檻（僅線上付款適用）、背景排程每 5 分鐘掃描、取消時觸發既有補償鏈，回應「將待決議事項列出來實作」需求 |
 
 ## 1. 職責
 
@@ -153,6 +154,12 @@ sequenceDiagram
 ## 6. 待決議事項
 - [x] ~~Saga 補償失敗時（例如還原庫存本身也失敗）的最終處理與告警機制——這是全新的失敗模式，需要對應設計~~——**已解決**：見 §4.1 統一設計（`SagaCompensationFailure` 實體＋指數退避重試＋人工介入端點），[13-service-wms.md](13-service-wms.md) §6、[16-service-promotions.md](16-service-promotions.md) §6 同步標記已解決並回頭引用本節。即時推播告警仍是殘留缺口，見 §4.1 說明
 - [x] ~~Correlation ID 貫穿追蹤：Saga 橫跨 6 個服務，`/internal/v1/orders/support/{id}/trace` 依賴此機制存在，但機制本身尚未設計~~——**已解決**：[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.1 已定案傳遞規則（Gateway 產生/沿用 `X-Correlation-Id`，逐服務強制轉發）；`/internal/v1/orders/support/{id}/trace` 的實作需確保 Saga 每一步（呼叫 Cart/WMS/Promotions/Vendor/Payment）都帶上同一組 Correlation ID 並寫入自己的結構化 log，才能依此 ID 查出跨服務的完整執行軌跡
-- [ ] 逾時未付款自動取消機制需另訂（多久算逾時、由誰觸發取消、是否需要背景排程服務）
+- [x] ~~逾時未付款自動取消機制需另訂（多久算逾時、由誰觸發取消、是否需要背景排程服務）~~——**已解決**：
+  1. **適用範圍**：僅信用卡（ECPay）等**線上付款**方式——結帳當下已導轉金流頁但買家未完成付款；COD **不適用**（COD 本來就沒有「導轉付款」這個等待步驟，見 [18-service-payment.md](18-service-payment.md) §2，下單當下即視同付款方式已確認，只是收款發生在出貨後）。
+  2. **逾時門檻：30 分鐘**。多數金流導轉頁（信用卡刷卡頁）本身也有類似的作業時限，30 分鐘足夠買家完成輸入卡號等操作，又不會讓庫存預留卡住太久（下方第 4 點）。
+  3. **由背景排程服務觸發**（比照本文件 §4.1 補償重試、[13-service-wms.md](13-service-wms.md) §6 效期商品排程已驗證過的背景 Worker 模式）：每 5 分鐘掃描一次 `PaymentStatus=Pending` 且 `CreatedAt` 超過 30 分鐘的訂單。
+  4. **取消動作**：`Order.Status` 轉為 `Cancelled`（買家自己逾時未付款，不是系統/服務端錯誤，用 `Cancelled` 而非 §2 新增的 `Failed`——`Failed` 專指 Saga 本身於服務呼叫失敗，見 §2 說明），並觸發與 §4 相同的補償鏈（釋放 WMS 預留庫存、還原優惠券使用次數）。
+  
+  此機制與 §4.1 的 Saga 補償失敗重試是不同層級：§4.1 處理「補償動作本身失敗」，這裡處理「買家單純沒有在時限內完成付款」，觸發的補償鏈相同，但觸發原因與時機不同（一個是被動偵測付款失敗後立刻補償，一個是主動排程偵測逾時後才觸發補償）
 - [x] ~~訂單編號產生策略需另訂~~——**部分解決**：現況已補上文件（見 §2.1），`ORD{日期}{8 碼亂數}` 是 `ecommerce-services` 目前實際在跑的暫定方案，不再是只活在程式碼 TODO 裡的無文件狀態；但「是否正式定案為永久設計，或改成更具業務意義的編號規則/加上防碰撞重試」本身仍是開放問題，未來要調整前先看 §2.1 現況說明
 - [x] ~~§4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支~~——**已解決**：兩份文件的循序圖皆已補上第四個 `alt` 分支；已核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 實際行為（`OrderStatus.Failed`、補償順序為優惠券→庫存），文件與程式碼一致，見 [10-gap-analysis.md](10-gap-analysis.md) §14
