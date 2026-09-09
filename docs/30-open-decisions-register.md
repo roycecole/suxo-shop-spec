@@ -14,12 +14,13 @@
 | v0.9 | 2026-09-09 | ordinarycas | 同步 [17-service-order.md](17-service-order.md) v0.6、[07-storefront-requirements.md](07-storefront-requirements.md) v0.8：§4 原「Order / 逾時未付款自動取消、訂單編號策略需另訂」1 列拆成 2 列（訂單編號現況已補上文件，見源文件 §2.1）；首頁 3D 互動效果與 Identity Refresh Token 儲存方式的文件補寫不影響本表（皆非既有待決議項）；改用腳本逐行核對 §2–§5 列數，統計訂正為 73 項未解決 + 10 項已解決 |
 | v0.10 | 2026-09-09 | ordinarycas | 使用者要求「將 73 項未解決列出來實作」，開始逐項處理：本輪解決 4 項並移出對應列——Saga 循序圖 Payment 失敗分支（[17](17-service-order.md)、[06](06-ecommerce-platform-architecture.md)）、Identity §5.1 適用範圍澄清（[11](11-service-identity.md)）、PostgreSQL 共用 instance 定案（[06](06-ecommerce-platform-architecture.md)）、Dockerfile 已撰寫（[26](26-project-structure.md)）；改用腳本逐行核對，統計訂正為 69 項未解決 + 14 項已解決 |
 | v0.11 | 2026-09-10 | ordinarycas | 繼續逐項處理待決議事項：本輪解決 11 項——`StoreSettings` 歸屬定案 Vendor Service（連帶解決 §6 重複追蹤列）、Catalog 搜尋效能（pg_trgm，已於 `ecommerce-services` 實作+實測）、Gateway 4 項（速率限制/Webhook/公開建單/聚合文件，連帶解決 §6 重複追蹤列與 [09](09-api-specification.md) 的重複項）、優惠券不可疊加、`Coupon.Code` 賣家範圍唯一（皆核對既有實作定案）、評價審核機制、訪客購物車清理排程；§1 優先清單因 `StoreSettings` 解決縮減為前 4 名；統計訂正為 57 項未解決 + 25 項已解決 |
+| v0.12 | 2026-09-10 | ordinarycas | 處理 §2 ShyeCMS 剩餘 7 項：3 項可技術/流程判斷已解決（`PastDue` SOP、開通部署現階段人工、`Suspended` 訊息文案），4 項屬合約/商業模式判斷（濫用舉證、GMV 計費相關 2 項、終止合作資料政策），不強行代為決定，改為標記「需要業主決策」並補上具體待答子問題，讓開放狀態本身更可執行；統計訂正為 54 項未解決 + 28 項已解決 |
 
 ## 使用說明
 
 **這份文件是索引，不是唯一真相來源**：每個項目的完整脈絡（為什麼會有這個問題、牽涉哪些既有決策）留在原文件裡，這裡只列一句話摘要 + 連結。修改某個待決議事項時，**改原文件**，不要只改這裡——這份索引之後需要重新掃描各文件同步更新，否則會變成第二份需要維護的清單，反而增加混亂。這正是 [10-gap-analysis.md](10-gap-analysis.md) 每一輪都要重新核對既有項目是否已解決、編號是否衝突的同一個教訓：分析/索引文件要跟實際規格狀態定期核對，不能只靠人工記憶。
 
-統計：**57 項未解決** + 25 項已解決（逐行核對 §2–§5 表格列數所得，非估算；已解決項目不列入本表）。近期解決（本輪 11 項）：`StoreSettings` 定案歸屬 Vendor Service（[14](14-service-vendor.md) §5、[20](20-service-cms.md) §5）、Catalog 商品搜尋效能改用 pg_trgm 索引（[12](12-service-catalog.md) §6）、Gateway 速率限制/Webhook/公開建單 API/聚合文件呈現方式共 4 項（[25](25-service-gateway.md) §7，同步 [09](09-api-specification.md) §4 的重複項）、內部 API 是否對外揭露文件（[09](09-api-specification.md) §4）、優惠券不可疊加使用（[16](16-service-promotions.md) §6）、`Coupon.Code` 唯一性範圍為賣家範圍內唯一（[16](16-service-promotions.md) §6）、評價審核機制定案事後審核（[24](24-service-reviews.md) §5）、訪客購物車 30 天清理排程（[15](15-service-cart.md) §5）。更早解決：Saga 循序圖 Payment 建立失敗分支（[17](17-service-order.md) §4、[06](06-ecommerce-platform-architecture.md) §7）、Identity §5.1 適用範圍書面澄清（[11](11-service-identity.md) §5.1）、PostgreSQL 共用 instance 多 schema 定案（[06](06-ecommerce-platform-architecture.md) §6.4）、`services/*/Dockerfile` 已撰寫並實測（[26](26-project-structure.md) §7）、反向代理引擎選型 YARP（[25](25-service-gateway.md)）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）、Identity Refresh Token（[11](11-service-identity.md) §5.1）、訪客升級為會員的信箱驗證時機（[11](11-service-identity.md) §5.1）。
+統計：**54 項未解決** + 28 項已解決（逐行核對 §2–§5 表格列數所得，非估算；已解決項目不列入本表；§2 剩餘 4 項皆標記「需要業主決策」，非技術判斷可解）。近期解決（本輪 3 項）：`ClientSubscription.PastDue` 處理 SOP 定案（[02-data-model.md](02-data-model.md) §6）、開通部署現階段維持人工（[03-client-lifecycle.md](03-client-lifecycle.md) §7）、`Suspended` 狀態訊息文案定案（[03-client-lifecycle.md](03-client-lifecycle.md) §7）。更早解決（前一輪 11 項）：`StoreSettings` 定案歸屬 Vendor Service（[14](14-service-vendor.md) §5、[20](20-service-cms.md) §5）、Catalog 商品搜尋效能改用 pg_trgm 索引（[12](12-service-catalog.md) §6）、Gateway 速率限制/Webhook/公開建單 API/聚合文件呈現方式共 4 項（[25](25-service-gateway.md) §7，同步 [09](09-api-specification.md) §4 的重複項）、內部 API 是否對外揭露文件（[09](09-api-specification.md) §4）、優惠券不可疊加使用（[16](16-service-promotions.md) §6）、`Coupon.Code` 唯一性範圍為賣家範圍內唯一（[16](16-service-promotions.md) §6）、評價審核機制定案事後審核（[24](24-service-reviews.md) §5）、訪客購物車 30 天清理排程（[15](15-service-cart.md) §5）。更早解決：Saga 循序圖 Payment 建立失敗分支（[17](17-service-order.md) §4、[06](06-ecommerce-platform-architecture.md) §7）、Identity §5.1 適用範圍書面澄清（[11](11-service-identity.md) §5.1）、PostgreSQL 共用 instance 多 schema 定案（[06](06-ecommerce-platform-architecture.md) §6.4）、`services/*/Dockerfile` 已撰寫並實測（[26](26-project-structure.md) §7）、反向代理引擎選型 YARP（[25](25-service-gateway.md)）、ShyeCMS 前端規格空白（[31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md)）、共用套件資安修補傳播機制（[29](29-shared-service-conventions.md) §4.1）、Saga 補償失敗處理（[17](17-service-order.md) §4.1）、熱銷排行/付款分布圖表選型（[22](22-service-analytics.md) §4）、英日文海外客群範圍（[28-i18n.md](28-i18n.md) §7/§8）、Identity Refresh Token（[11](11-service-identity.md) §5.1）、訪客升級為會員的信箱驗證時機（[11](11-service-identity.md) §5.1）。
 
 ## 1. 前 4 項建議優先處理（依風險/急迫性排序，非文件順序）
 
@@ -34,15 +35,12 @@
 
 ## 2. ShyeCMS（[00](00-overview.md)–[05](05-scope-and-open-items.md)）
 
-| 項目 | 來源 |
-|---|---|
-| 濫用/超用糾紛的舉證機制（合約條款？人工稽核頻率？） | [01-architecture.md](01-architecture.md) §5 |
-| GMV 計費若要恢復可行性，需要客戶方同意的資料申報機制設計 | [01-architecture.md](01-architecture.md) §5 |
-| `ClientSubscription.Status = PastDue` 時的標準作業流程 | [02-data-model.md](02-data-model.md) §6 |
-| GMV 超額抽成的計算依據完全空白 | [02-data-model.md](02-data-model.md) §6 |
-| 開通部署（Provisioning）是否要自動化 | [03-client-lifecycle.md](03-client-lifecycle.md) §7 |
-| `Suspended` 狀態下客戶站台該顯示什麼訊息給買家/賣家 | [03-client-lifecycle.md](03-client-lifecycle.md) §7 |
-| 客戶終止合作的資料交還/刪除政策 | [03-client-lifecycle.md](03-client-lifecycle.md) §7 |
+| 項目 | 來源 | 備註 |
+|---|---|---|
+| 濫用/超用糾紛的舉證機制（合約條款？人工稽核頻率？） | [01-architecture.md](01-architecture.md) §5 | **需要業主決策**，非技術判斷 |
+| GMV 計費若要恢復可行性，需要客戶方同意的資料申報機制設計 | [01-architecture.md](01-architecture.md) §5 | **需要業主決策**，與下一項互相依賴 |
+| GMV 超額抽成的計算依據完全空白 | [02-data-model.md](02-data-model.md) §6 | **需要業主決策**，具體抽成比例/計費模式 |
+| 客戶終止合作的資料交還/刪除政策 | [03-client-lifecycle.md](03-client-lifecycle.md) §7 | **需要業主決策**，個資法/合約範疇；已補上 4 個具體待答子問題 |
 
 ## 3. 電商平台總覽與前後台需求（[06](06-ecommerce-platform-architecture.md)–[09](09-api-specification.md)）
 

@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 初版建立 |
 | v0.2 | 2026-09-08 | ordinarycas | 因應決策 C、D 推翻：`ClientDeployment` 移除連線用欄位（`GatewayEndpoint`/`InternalServiceCredentialRef`），改純盤點用途；`ClientFeatureEntitlement` 註記為商業紀錄非技術強制；移除 §5 `UsageSnapshot`（ShyeCMS 不取得客戶用量資料） |
 | v0.3 | 2026-09-08 | ordinarycas | 新增 §0 ERD（Mermaid），彙整本文件所有實體關聯 |
+| v0.4 | 2026-09-10 | ordinarycas | §6 `PastDue` SOP 待決議項已解決：定案採分階段處理流程（提醒信→人工聯繫→視情況暫停功能→轉終止評估）；GMV 抽成計算依據維持開放，標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
 
 > 本文件列出 ShyeCMS 自己的資料庫實體，與 v1（`docs/02-data-model.md`）的客戶端資料庫**完全分開、互不共用**——ShyeCMS 只儲存「關於客戶的管理資訊」，不儲存客戶自己的商品/訂單/會員資料。型別為建議型別。
 
@@ -173,5 +174,11 @@ erDiagram
 | `VendorStorageQuota`（docs/09 §9.1） | `SubscriptionPlan.StorageQuotaBytes` | 同上，僅為合約紀錄，實際配額仍在客戶部署內手動設定 |
 
 ## 6. 待決議事項
-- [ ] `ClientSubscription.Status = PastDue` 時，ShyeCMS 只能記錄該狀態並提醒業務/客服人員手動處理（例如聯繫客戶或請維運人員關閉功能）——是否需要一套標準作業流程（SOP）而非個案處理
-- [ ] GMV 超額抽成的計算依據完全空白（決策 D 排除了拉取客戶用量資料的路徑），若未來真的需要，須設計客戶自行申報或另立雙方同意的資料交換機制，不在本表範圍內
+- [x] ~~`ClientSubscription.Status = PastDue` 時，ShyeCMS 只能記錄該狀態並提醒業務/客服人員手動處理——是否需要一套標準作業流程（SOP）而非個案處理~~——**已解決：需要，定案採業界常見的分階段 SOP**（沿用一般 SaaS 逾期收款慣例，非本平台獨創，正式上線前建議業主/財務確認實際天數）：
+  1. 逾期第 1 天：`Status` 自動轉 `PastDue`，系統寄出提醒信給客戶帳單聯絡人（沿用一般帳單提醒慣例）。
+  2. 逾期第 7 天：業務/客服人員人工聯繫客戶（電話/Email 雙軌），ShyeCMS 記錄一筆聯繫紀錄（`AuditLog`）。
+  3. 逾期第 14 天仍未處理：業務主管決定是否請維運人員暫停該客戶站台功能（`ClientFeatureEntitlement` 手動關閉，比照既有的功能開通流程，人工操作，非自動化）。
+  4. 逾期第 30 天：轉客戶終止合作流程評估（見 [03-client-lifecycle.md](03-client-lifecycle.md) §6）。
+  
+  ShyeCMS 本身只需要能記錄每個階段的處理狀態與時間點（`AuditLog` 已有的機制即可涵蓋），不需要新增自動化排程執行前兩階段以外的動作——第 3、4 階段刻意保留人工判斷空間，避免自動停用正在跟客戶協商中的帳號。
+- [ ] **需要業主決策（非技術判斷）**：GMV 超額抽成的計算依據完全空白（決策 D 排除了拉取客戶用量資料的路徑）——這是具體的抽成比例/計費模式，屬於商業模式本身，與 [01-architecture.md](01-architecture.md) §5「GMV 計費資料申報機制」是同一組待決議的兩面（一個問「怎麼拿到數字」、一個問「拿到數字後怎麼算錢」），建議業主一併決策，不在本表範圍內單方面回答
