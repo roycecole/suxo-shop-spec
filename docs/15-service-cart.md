@@ -5,6 +5,7 @@
 |---|---|---|---|
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-09 | ordinarycas | §5 訪客購物車自動清理排程待決議項已解決：定案 30 天未更新視為過期、每日背景排程清理，回應「將待決議事項列出來實作」需求 |
+| v0.3 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Cart/CartItem 兩個實體（一對多）；已交叉核對 `ecommerce-services` 實際 EF Core 程式碼，§2 既有文字內容與程式碼一致，未發現需訂正之處 |
 
 ## 1. 職責
 
@@ -16,6 +17,32 @@
 |---|---|
 | Cart | 會員為 UserId，訪客為 Cookie/SessionId |
 | CartItem | ProductId/VariationId、Quantity |
+
+### 2.1 ER 圖
+
+以下實體均屬本服務自己的 PostgreSQL schema，關聯線只畫本服務內部真實存在的外鍵（FK）；`Cart.UserId`、`CartItem.ProductId`/`VariationId` 分別是對 Identity Service、Catalog Service 的跨服務參照，僅為慣例對應的裸 GUID，資料庫層級無 FK 約束。
+
+```mermaid
+erDiagram
+    Cart ||--o{ CartItem : "包含"
+
+    Cart {
+        uuid Id PK
+        uuid UserId "nullable，會員身分；跨服務參照 Identity Service User，無 FK"
+        string GuestToken "nullable，訪客身分（Cookie/Session Id）"
+        datetime CreatedAtUtc
+        datetime UpdatedAtUtc
+    }
+    CartItem {
+        uuid Id PK
+        uuid CartId FK
+        uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
+        uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        int Quantity
+        datetime CreatedAtUtc
+        datetime UpdatedAtUtc
+    }
+```
 
 ## 3. 爸芭樂案例
 
