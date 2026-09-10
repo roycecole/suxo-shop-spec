@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-09 | ordinarycas | §6 Saga 補償失敗待決議項標記已解決，統一設計見 [17-service-order.md](17-service-order.md) §4.1 |
 | v0.6 | 2026-09-09 | ordinarycas | §2 補上 Coupon.VendorId 欄位；§6 解決 2 項待決議：優惠券不可疊加使用、Code 唯一性範圍為賣家範圍內唯一（皆核對 `ecommerce-services` 既有實作後定案），回應「將待決議事項列出來實作」需求 |
 | v0.7 | 2026-09-10 | ordinarycas | §2 新增 CouponUsageLog 實體、§5 新增對應的 PlatformSupportStaff 診斷端點——回應 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6「診斷端點逐服務盤點」發現本服務原本遺漏這塊 |
+| v0.8 | 2026-09-10 | ordinarycas | §2 新增 2.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Coupon.UsedCount`/`IsActive`、`CouponUsageLog.BuyerId`；確認 `Coupon` 與 `CouponUsageLog`/`Translation` 之間目前皆未在 EF 設定檔建立資料庫層級外鍵（僅建索引），ERD 依此如實不畫關聯線 |
 
 ## 1. 職責
 
@@ -19,9 +20,51 @@
 
 | 實體 | 說明 |
 |---|---|
-| Coupon | VendorId（優惠券歸屬某個賣家）、Code（**VendorId + Code 唯一**，見 §6）、DiscountType（FixedAmount/Percentage）、Amount、MinimumSpend、UsageLimit/UsageLimitPerUser、StartAt/ExpiryAt、適用範圍（分類/商品限定） |
-| CouponUsageLog | 優惠券使用/還原歷程（`CouponId`、`OrderId`、`Action`：`Used`/`Reverted`、`CreatedAt`），供 `PlatformSupportStaff` 排查併發或補償異常——比照 [13-service-wms.md](13-service-wms.md) §2 `StockLedger` 的既有模式，本服務先前遺漏這張表，只靠 `Coupon.UsedCount` 這個計數器沒有歷史軌跡可查 |
+| Coupon | VendorId（優惠券歸屬某個賣家）、Code（**VendorId + Code 唯一**，見 §6）、DiscountType（FixedAmount/Percentage）、Amount、MinimumSpend、UsageLimit/UsageLimitPerUser、UsedCount（目前已使用次數，§4 原子遞增的對象）、StartAt/ExpiryAt、適用範圍（ScopeType + ScopeTargetIds，分類/商品限定）、IsActive（停用旗標，見 §5 DELETE 端點，採軟刪除） |
+| CouponUsageLog | 優惠券使用/還原歷程（`CouponId`、`OrderId`、`Action`：`Used`/`Reverted`、`BuyerId`：使用者 ID，訪客結帳為 null、供 `UsageLimitPerUser` 每人上限查詢、`CreatedAt`），供 `PlatformSupportStaff` 排查併發或補償異常——比照 [13-service-wms.md](13-service-wms.md) §2 `StockLedger` 的既有模式，本服務先前遺漏這張表，只靠 `Coupon.UsedCount` 這個計數器沒有歷史軌跡可查 |
 | Translation | EntityType（"Coupon"）、EntityId、LocaleCode、FieldName（如優惠券顯示文案）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
+
+### 2.1 ERD
+
+```mermaid
+erDiagram
+    Coupon {
+        uuid Id PK
+        uuid VendorId "cross-service ref, Vendor Service, no FK"
+        string Code "unique with VendorId"
+        CouponDiscountType DiscountType
+        decimal Amount
+        decimal MinimumSpend "nullable"
+        int UsageLimit "nullable"
+        int UsageLimitPerUser "nullable"
+        int UsedCount
+        datetimeoffset StartAt "nullable"
+        datetimeoffset ExpiryAt "nullable"
+        CouponScopeType ScopeType
+        uuid[] ScopeTargetIds "Category/Product ids, cross-service, no FK"
+        bool IsActive
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    CouponUsageLog {
+        uuid Id PK
+        uuid CouponId "references Coupon.Id, indexed only, no FK constraint"
+        uuid OrderId "cross-service ref, Order Service, no FK"
+        CouponUsageAction Action
+        uuid BuyerId "nullable, cross-service ref, Identity Service, no FK"
+        datetimeoffset CreatedAt
+    }
+    Translation {
+        uuid Id PK
+        string EntityType "currently only Coupon"
+        uuid EntityId "polymorphic ref by EntityType, no FK"
+        string LocaleCode
+        string FieldName
+        string Value
+    }
+```
+
+> 本圖未畫出任何關聯線：已對照 `CouponUsageLogConfiguration`／`TranslationConfiguration` 確認，`CouponUsageLog.CouponId` 與 `Translation.EntityId` 都只建了索引，沒有 `HasOne`/`HasForeignKey`，資料庫層級不存在外鍵約束（`CouponId` 邏輯上仍對應 `Coupon.Id`；`Translation.EntityId` 依 `EntityType` 指向不同實體，是 [28-i18n.md](28-i18n.md) §3 共用多語系表既有的多型設計，目前僅有 `"Coupon"` 一種）。`Coupon.VendorId`、`Coupon.ScopeTargetIds`、`CouponUsageLog.OrderId`/`BuyerId` 則是本服務一貫的跨服務參照慣例（只存 ID、不建 FK），分屬 Vendor／Catalog／Order／Identity 服務。
 
 ## 3. 爸芭樂案例
 
