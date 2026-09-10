@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-09 | ordinarycas | §4.1 訂正 Reviews 路由範例與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點不一致的寫法（`/api/v1/orders/{id}/reviews` 誤植，應為 `/api/v1/orders/{subOrderId}/review`），[10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現的純格式錯誤，直接修正 |
 | v0.5 | 2026-09-09 | ordinarycas | §7 解決 4 項待決議：速率限制採記憶體計數、Webhook 現階段不需要、不開放建立訂單的公開 API、聚合文件採單一 Swagger UI + 服務切換選單，回應「將待決議事項列出來實作」需求 |
 | v0.6 | 2026-09-10 | ordinarycas | §5 新增 5.1 ER 圖（Mermaid erDiagram）；依 `ecommerce-services/services/gateway` 實作程式碼補上 `ApiKey` 的 `Name`／`IsActive` 欄位（原表格未列，分別供金鑰管理介面識別與撤銷狀態使用），核對 `AnonymousRateLimitRule` 欄位與程式碼一致 |
+| v0.7 | 2026-09-10 | ordinarycas | 新增 §4.2：修正 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6 列出的 5 個服務／6 個 `PlatformSupportStaff` 診斷端點先前完全不可達的問題（見 [10-gap-analysis.md](10-gap-analysis.md) 對應項目訂正說明）——路由表原本整個排除 `/internal/v1/*`，即使下游授權修好也沒有對外入口能到達；新增 6 條具名 `support-*` 路由，精確比對每個端點的完整路徑（不用萬用比對），是「`internal/v1/*` 不對外路由」原則唯一、範圍鎖死的例外；§2 補上第三種端點類型 |
 
 ## 1. 職責
 
@@ -20,6 +21,9 @@
 |---|---|---|
 | 前台 / 賣家後台 | `/api/v1` | JWT（`Authorization: Bearer`） |
 | 外部系統整合 | `/api/public/v1` | API 金鑰（`X-Api-Key`） |
+| 拾夜科技支援人員（`PlatformSupportStaff`） | `/api/v1/support/...` | JWT（`Authorization: Bearer`），見 §4.2 |
+
+`/api/v1/support/...` 與一般 `/api/v1` 前台/賣家後台路由同屬「使用者 JWT」這一類（Gateway 本身不做授權判斷，原樣轉發 `Authorization` Header，由下游服務驗證角色），不是獨立的第三種驗證機制——這裡拆成獨立一列只是讓路徑前綴一目了然，實際驗證邏輯見 §4.2。
 
 ## 3. 金鑰與權限
 
@@ -60,6 +64,25 @@ Gateway 不新開一組「內部 API」給自己呼叫，而是直接路由到�
 4. 單一 VPS、單客戶流量規模下，自建的唯一優勢「省一個依賴」不敵維護成本。
 
 落地現況：Gateway 已改用 YARP，路由表涵蓋全部 14 個領域服務的公開 `/api/v1/*` 前綴（Reviews 掛在 `/api/v1/products/{id}/reviews`、`/api/v1/orders/{subOrderId}/review` 的較特定路由，優先於 Catalog/Order 的字首路由——路徑訂正為與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點一致，原文誤植為複數 `reviews` 且參數名寫成 `id`）；金鑰驗證（§3）、聚合、限流（§3.1）仍未實作，維持待辦。
+
+### 4.2 PlatformSupportStaff 支援端點路由（2026-09-10 新增，修正先前完全不可達的缺陷）
+
+[29-shared-service-conventions.md](29-shared-service-conventions.md) §3 訂的「`/internal/v1/...` 一律不對外路由」原則，原意是防止服務對服務專用的內部端點被外部直接打到。但 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6 列出的 5 個服務、6 個 `PlatformSupportStaff` 診斷端點雖然路徑帶 `/internal/v1/...` 前綴，呼叫方實際上是**真人**拾夜科技支援人員（持使用者 JWT），不是服務對服務呼叫——這批端點被這條原則連帶一起擋在 Gateway 外面，導致 Gateway（唯一對外入口）完全沒有路徑能把請求轉發過去，是骨架階段留下、直到本輪才發現並修正的缺陷（詳見 [10-gap-analysis.md](10-gap-analysis.md) 對應項目的訂正說明）。
+
+**做法**：新增 6 條具名路由，逐一精確比對每個端點的完整路徑（不用 `{**rest}` 這種會連帶吃進同一服務其他 internal 端點的萬用比對——如 Order 服務的 `internal/v1/orders/support/completed` 是 Analytics Service 的服務對服務批次拉取端點，不是 `PlatformSupportStaff` 診斷端點，不能被一併轉發），是「`internal/v1/*` 不對外路由」這條原則唯一、範圍鎖死的例外：
+
+| 路由 | 對外路徑 | 轉發到（下游服務實際路徑） |
+|---|---|---|
+| `support-wms-stock-ledger` | `GET /api/v1/support/wms/stock-ledger/{productId}` | `internal/v1/wms/support/stock-ledger/{productId}` |
+| `support-promotions-usage-log` | `GET /api/v1/support/promotions/{code}/usage-log` | `internal/v1/promotions/support/{code}/usage-log` |
+| `support-notifications-failed-log` | `GET /api/v1/support/notifications/failed-log` | `internal/v1/notifications/support/failed-log` |
+| `support-orders-trace` | `GET /api/v1/support/orders/{id}/trace` | `internal/v1/orders/support/{id}/trace` |
+| `support-orders-compensation-failures` | `GET /api/v1/support/orders/compensation-failures` | `internal/v1/orders/support/compensation-failures` |
+| `support-payments-callback-log` | `GET /api/v1/support/payments/{orderId}/callback-log` | `internal/v1/payments/support/{orderId}/callback-log` |
+
+**授權模式**：掛在 `/api/v1/support/...`（不是 `/api/public/v1/...`），因此不經過 §3 的 `ApiKeyAuthenticationMiddleware`（該中介軟體只攔截 `/api/public/v1` 前綴）。Gateway 本身不對這批路由做授權判斷——比照既有 `/api/v1/vendor/...`（`VendorScoped`）路由的既有模式，原樣轉發 `Authorization` Header，由下游服務各自的 `PlatformSupportStaffOnly` Authorization Policy（`SuxoShop.Shared.Security`，驗證使用者 JWT 的 `Role == PlatformSupportStaff`）把關，Gateway 只負責「轉發到對的地方」，不重複做一次授權判斷。這與 Gateway 自己的 `POST /api/v1/gateway/api-keys`（金鑰簽發/撤銷，見 §5）用的 `GatewayAuthorizationPolicies.PlatformSupportStaffOnly` 是同名但各自獨立註冊的 Policy，語意一致（皆限定 `PlatformSupportStaff` 角色），互不影響。
+
+**稽核**：5 個服務收到請求時皆輸出一行結構化 JSON log（`IsSystemVendorAccess`/`StaffUserId`/`StaffEmail`/`Endpoint`/`ResourceType`/`ResourceId`/`VendorId`/`AccessedAtUtc`），落實 [08](08-vendor-admin-requirements.md) §4.4 的稽核要求；Gateway 本身不重複記錄（避免同一次存取在兩個服務各留一筆、欄位還可能兜不起來）。
 
 ## 5. 資料模型
 

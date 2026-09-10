@@ -11,6 +11,7 @@
 | v0.6 | 2026-09-08 | ordinarycas | §4.3 移除角色列舉裡的「Admin」——[11-service-identity.md](11-service-identity.md) §2 目前定案的 `User.Role` 枚舉本來就沒有這個值，[05-scope-and-open-items.md](05-scope-and-open-items.md) 也明確排除本輪的平台管理員規格，此處純屬文字誤植，非保留給未來的角色 |
 | v0.7 | 2026-09-10 | ordinarycas | §6 稅務欄位待決議項已解決：定案不新增，維持匯出固定值，回應「將待決議事項列出來實作」需求 |
 | v0.8 | 2026-09-10 | ordinarycas | §5.3 訂正 Grouped 商品匯出分隔符號錯誤（逗號→`|`，查證 WooCommerce 官方格式後發現）；§6 解決其餘 5 項待決議：PlatformSupportStaff 診斷端點盤點（順手補上 Promotions/Notification 兩個遺漏端點）、即時通知定案不需要、會員資訊遮罩顯示定案、匯出連結時效定案 30 分鐘，回應「將待決議事項列出來實作」需求 |
+| v0.9 | 2026-09-10 | ordinarycas | 新增 §4.6：§6 盤點出的 5 個服務／6 個診斷端點先前在 `ecommerce-services` 完全不可達（誤掛服務身分 JWT 專用的 `InternalAny` Policy，Gateway 路由表也整個排除 `/internal/v1/*`），本輪真正修正——補上 `PlatformSupportStaffOnly` Policy、Gateway 新增對應具名路由（[25-service-gateway.md](25-service-gateway.md) §4.2）、落實 §4.4 稽核要求的結構化 log 欄位；已用真實簽發的使用者 JWT 經 Gateway 實測驗證。回應「查核 §6 盤點出的端點是否真的能被呼叫到」的發現 |
 
 > 針對「爸芭樂」微服務平台的賣家角色具體化，並新增拾夜科技支援權限章節（第 4 節）。不含客戶自己的「平台管理員」規格（賣家審核、全站金流物流設定、客訴仲裁）——爸芭樂案例暫定為單一賣家自營，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2。
 
@@ -85,6 +86,18 @@
 
 - 此角色**不提供**跨客戶查看能力——一個 `PlatformSupportStaff` 帳號只能存取它所屬的那一個客戶環境，不存在拾夜科技用一組帳號登入所有客戶站台的機制。
 - 此角色**不是** ShyeCMS 的功能，也不會讓 ShyeCMS 因此間接取得客戶資料——決策 D（不取得客戶商品/售價/會員資料）依然成立，這裡的資料存取行為完全發生在客戶自己的環境內，由客戶自己的 AuditLog 留痕，資料不會回傳到 ShyeCMS。
+
+### 4.6 授權與路由實作（2026-09-10 新增）
+
+§6 盤點出的 5 個服務、6 個診斷端點（見該節表格）**曾經完全不可達**：`ecommerce-services` 程式碼原本誤把這些端點掛在 `InternalAny` Policy 下（驗證的是服務身分 JWT，服務對服務呼叫專用），真人 `PlatformSupportStaff` 使用者拿自己登入取得的使用者 JWT 完全無法通過；Gateway 路由表又整個排除 `/internal/v1/*`（[29-shared-service-conventions.md](29-shared-service-conventions.md) §3），即使角色驗證修好，也沒有對外入口能把請求轉發過去。這個落差從骨架階段存在到本輪才被發現並修正（詳見 [10-gap-analysis.md](10-gap-analysis.md) 對應項目的訂正說明），過程記錄於此，避免之後又被誤判為「已解決」。
+
+真正落地的三件事：
+
+1. **授權**：`SuxoShop.Shared.Security` 新增 `PlatformSupportStaffOnly` Policy（驗證使用者 JWT 的 `Role == PlatformSupportStaff`，比照既有 `VendorScoped` Policy 的模式），6 個端點全數由 `InternalAny` 改掛此 Policy；Notification Service 原本完全沒有註冊使用者 JWT 驗證，一併補上。
+2. **路由**：Gateway 新增 6 條具名路由（`/api/v1/support/...`，不經過 `/api/public/v1` 的 API 金鑰驗證），逐一精確轉發到對應的 `internal/v1/.../support/...` 路徑，是「`internal/v1/*` 不對外路由」原則唯一、範圍鎖死的例外，細節見 [25-service-gateway.md](25-service-gateway.md) §4.2。
+3. **稽核**（落實 §4.4 要求）：5 個服務收到請求時皆輸出一行結構化 JSON log，固定欄位 `IsSystemVendorAccess`（固定 `true`）、`StaffUserId`、`StaffEmail`、`Endpoint`、`ResourceType`、`ResourceId`、`VendorId`、`AccessedAtUtc`——目前**不是**獨立的 `AuditLog` 資料表（那是遠比修正這 6 個端點更大的工程，超出本輪範圍，未來若要新增，欄位命名應延續這裡的既有慣例），而是沿用各服務已接線的結構化 log 管線（[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.3），供集中收集後查詢。
+
+驗證方式：5 個服務各自新增 HTTP 層整合測試（合法 `PlatformSupportStaff` Token 應得 200 + 真實資料、角色不符 Token 應得 403、無 Token 應得 401），Gateway 新增路由轉發測試；另外以真實簽發的使用者 JWT，經由 Gateway（非直連服務）對 `docker compose` 實際執行中的環境（真實 Postgres）發出真實請求，確認回傳真實資料，且對應服務的 log 裡真的寫入了上述稽核欄位。
 
 ## 5. 資料可攜出：匯出 WooCommerce 商品 CSV
 
@@ -162,7 +175,7 @@ WooCommerce CSV 用「多列」表示一個變體商品：第一列是父商品�
 | Notification | `GET /internal/v1/notifications/support/failed-log`（**本次補上，原本遺漏**） | 查重試 4 次仍失敗的 LINE 推播清單 |
 | Cart／Catalog／Media／CMS／Analytics／Shipping／Vendor／Reviews／Gateway／Identity | 無 | 這些服務沒有「補償/重試會卡住」的非同步失敗狀態（多為同步 CRUD），目前沒有已知需要診斷端點的情境，維持沒有 |
 
-盤點依據：本規格庫已設計的 Saga 補償統一模式（[17-service-order.md](17-service-order.md) §4.1）——凡是 Saga 補償參與者（WMS、Promotions）或有自己重試機制的非同步流程（Payment 回調、Notification 推播），都該有唯讀診斷端點；純同步 CRUD 服務目前沒有對應需求。Promotions 與 Notification 原本各自遺漏，已在 [16-service-promotions.md](16-service-promotions.md)、[23-service-notification.md](23-service-notification.md) 補上（含 Promotions 新增 `CouponUsageLog` 實體支撐查詢）
+盤點依據：本規格庫已設計的 Saga 補償統一模式（[17-service-order.md](17-service-order.md) §4.1）——凡是 Saga 補償參與者（WMS、Promotions）或有自己重試機制的非同步流程（Payment 回調、Notification 推播），都該有唯讀診斷端點；純同步 CRUD 服務目前沒有對應需求。Promotions 與 Notification 原本各自遺漏，已在 [16-service-promotions.md](16-service-promotions.md)、[23-service-notification.md](23-service-notification.md) 補上（含 Promotions 新增 `CouponUsageLog` 實體支撐查詢）。**這些端點如何被授權存取、如何路由、如何稽核，見 §4.6**——本表只列「有哪些端點」，實作落地過程另有一段先誤判為已解決的插曲，記錄在該節。
 - [x] ~~是否需要要求 `PlatformSupportStaff` 存取時客戶端能即時看到通知~~——**已解決：現階段不需要，AuditLog 已足夠**。理由：即時通知需要額外的推播管道（比照 [23-service-notification.md](23-service-notification.md) 的 LINE 推播基礎設施，或另建 Email 通知），對「支援人員查看一筆訂單」這種相對低風險、高頻率的操作即時通知客戶，效益與開發成本不成比例，且可能造成不必要的客戶焦慮（每次支援人員例行查詢都推播，反而稀釋掉真正異常存取的警示效果）。既有的 `AuditLog` 已完整記錄每次存取的人員/時間/對象，客戶如有疑慮可要求提供存取紀錄，事後可稽核已滿足透明度需求，不需要做成即時推播
 - [x] ~~唯讀範圍是否需要對會員 Email/電話做遮罩顯示（如 `t***@example.com`）而非完全不可見~~——**已解決：需要，預設遮罩顯示**。`PlatformSupportStaff` 查詢會員相關資料（訂單詳情、Saga trace 等）時，Email 顯示為 `t***@example.com`（保留首字元＋網域）、電話顯示為 `09XX-XXX-123`（保留區碼與末3碼）格式，兼顧「支援人員能辨識/核對是不是同一個人」與隱私最小化原則；如遇到真的需要完整聯絡資訊處理客訴的情境（如需要回電），另外設計「檢視完整資訊」的明確動作並寫入 `AuditLog`（誰在何時查看了誰的完整聯絡資訊），不做成預設全露出
 - [x] ~~稅務欄位（`Tax status`/`Tax class`）匯出固定值是否足夠，或需要在 Catalog.Product 正式新增稅務欄位~~——**已解決：固定值已足夠，不新增欄位**，理由見 [12-service-catalog.md](12-service-catalog.md) §6
