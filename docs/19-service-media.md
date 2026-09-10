@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | `MediaAsset` 補上 `VendorId` 欄位——先前沒有歸屬欄位，無法對照 `VendorStorageQuota` 算出「這個賣家用了多少配額」（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.3 | 2026-09-10 | ordinarycas | §7 解決 2 項待決議：影片縮圖補上 ffmpeg 技術設計（尚未實作）、CDN 加速定案現階段不需要，回應「將待決議事項列出來實作」需求 |
 | v0.4 | 2026-09-10 | ordinarycas | §3 新增 3.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`MediaAsset.OriginalFileName`/`StoredFileName`/`ContentType`/`SizeBytes`/`ThumbnailUrls`（`ThumbnailUrls` 為骨架階段依 §4 縮圖需求新增，規格表格原未列出）；確認 `MediaAsset`/`StorageProviderSettings`/`VendorStorageQuota` 三者之間沒有任何資料庫層級外鍵，ERD 依此如實不畫關聯線 |
+| v0.5 | 2026-09-10 | ordinarycas | §6 新增 `POST /internal/v1/media/images/batch` 批次圖片查詢端點，`ecommerce-services` 本輪修正 Catalog WooCommerce 匯出工作的 N+1 內部呼叫問題（見 [12-service-catalog.md](12-service-catalog.md) §5）時發現並記錄：`MediaAsset` 目前沒有任何關聯到 Product 的欄位，WooCommerce 匯出的圖片網址欄位因此從骨架階段至今實際上從未真正輸出過資料，這是與本次批次化修正無關、更早就存在的獨立缺口，見 [10-gap-analysis.md](10-gap-analysis.md) 新增項目 |
 
 ## 1. 職責
 
@@ -89,6 +90,7 @@ erDiagram
 | `DELETE /api/v1/vendor/media/{id}` | 刪除檔案（回收配額） | 賣家 |
 | `GET /api/v1/vendor/media/quota` | 查詢目前配額用量 | 賣家 |
 | `POST /internal/v1/media/thumbnail-jobs` | 縮圖背景 Worker 內部佇列 | 內部 |
+| `POST /internal/v1/media/images/batch` | 批次查詢多筆商品的圖片網址（`productIds`，上限 500 筆），供 Catalog Service 的 WooCommerce 匯出工作使用，取代原本逐商品各別呼叫一次的 N+1 寫法，見 [12-service-catalog.md](12-service-catalog.md) §5。**已知缺口**：`MediaAsset`（見 §3/§3.1 ERD）目前沒有任何關聯到 Product 的欄位，本端點契約完整、已通過批次化，但在該欄位補齊前一律回傳「查無圖片」，與批次化之前的既有行為相同，不是本次新增的退步 | 內部 |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 

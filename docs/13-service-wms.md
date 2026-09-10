@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-09 | ordinarycas | §6 Saga 補償失敗待決議項標記已解決，統一設計見 [17-service-order.md](17-service-order.md) §4.1 |
 | v0.4 | 2026-09-10 | ordinarycas | §6 解決 3 項待決議：多倉現階段明確排除、效期商品新增每日自動處理排程、Catalog 呼叫失敗降級行為釐清為架構前提不成立（storefront 實際直接呼叫本服務，已有四態 UI），回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Inventory/StockBatch/StockReservation/StockLedger 四個實體；交叉核對 `ecommerce-services` 實際程式碼後發現 §2 表格文字未反映 v0.4 效期排程已解決項新增的 `StockBatch.IsNearExpiry`/`RemainingQuantity` 欄位與 `StockLedgerEntryType.Expired` 異動種類，已補上。四個實體彼此之間確認**沒有**資料庫層級外鍵關係（僅透過 `ProductId`/`VariationId` 慣例對應，且該欄位是對 Catalog Service 的跨服務參照），ER 圖因此不畫任何關聯線 |
+| v0.6 | 2026-09-10 | ordinarycas | §5 新增 `POST /internal/v1/wms/inventory/batch` 批次庫存查詢端點，`ecommerce-services` 本輪修正 Catalog WooCommerce 匯出工作的 N+1 內部呼叫問題（見 [12-service-catalog.md](12-service-catalog.md) §5），取代原本規劃逐商品呼叫既有單筆端點的寫法 |
 
 ## 1. 職責
 
@@ -90,6 +91,7 @@ erDiagram
 | `GET /api/v1/wms/batches?productId=...` | 查詢商品各批次庫存與有效期 | 賣家 |
 | `PUT /api/v1/wms/products/{productId}/backorder-policy` | 設定 `BackorderPolicy` | 賣家 |
 | `GET /internal/v1/wms/support/stock-ledger/{productId}` | 供 `PlatformSupportStaff` 唯讀查詢庫存異動歷程，用於排查庫存異常 | 內部 + PlatformSupportStaff |
+| `POST /internal/v1/wms/inventory/batch` | 批次查詢多筆商品／規格的庫存狀態（`productIds`/`variationIds`，合計上限 500 筆）。供 Catalog Service 的 WooCommerce 匯出工作使用，取代原本逐商品各別呼叫一次的 N+1 寫法，見 [12-service-catalog.md](12-service-catalog.md) §5 | 內部 |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
