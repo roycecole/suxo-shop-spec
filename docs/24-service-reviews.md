@@ -7,10 +7,11 @@
 | v0.2 | 2026-09-08 | ordinarycas | 補上賣家回覆評價機制（`Review` 新增回覆欄位、§4 新增管理/回覆端點），回應賣家後台評價管理需求（見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1、[10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.3 | 2026-09-09 | ordinarycas | §5 評價審核機制待決議項已解決：定案預設直接顯示（事後審核制），回應「將待決議事項列出來實作」需求 |
 | v0.4 | 2026-09-10 | ordinarycas | §2 新增 2.1 ER 圖（Mermaid erDiagram）；依 `ecommerce-services/services/reviews` 實作程式碼補上 `Review` 的 `VendorId` 欄位（原表格未列，供 §4 賣家後台評價查詢範圍過濾使用）與 `Status` 預設值 `Approved` 的說明（呼應 §5 已定案的事後審核制） |
+| v0.5 | 2026-09-11 | ordinarycas | §1 補上一句說明：「僅限已完成訂單」的資格檢查依賴 Order Service 的內部端點（`GET /internal/v1/orders/sub-orders/{subOrderId}`），該端點先前在 Order Service 端從未實作過（本服務的 `HttpOrderServiceClient` 一直呼叫得到但收到 404），且 `SubOrder.Status` 也一直沒有任何機制轉為 `Completed`，兩者疊加導致評價送出功能實質上完全無法使用——本輪已於 [17-service-order.md](17-service-order.md) §5/§6 一併補上（出貨後 5 天自動完成 + 補上該內部端點），已用真實 Docker Compose 環境端到端驗證評價送出功能確實恢復正常。本服務端的行為與程式碼皆未變動，純粹補充說明依賴的上游現況 |
 
 ## 1. 職責
 
-商品評價，僅限已完成訂單的買家可評價（防刷評機制基礎）。
+商品評價，僅限已完成訂單的買家可評價（防刷評機制基礎）。「已完成」資格檢查透過內部服務呼叫向 Order Service 查詢子訂單狀態（`GET /internal/v1/orders/sub-orders/{subOrderId}`，見 [17-service-order.md](17-service-order.md) §5），該端點與「子訂單如何進入 Completed 狀態」的觸發機制（出貨後 5 天自動完成，見 17 §6）皆已於 2026-09-11 補齊並完成端到端驗證——見本文件 v0.5 異動紀錄。
 
 ## 2. 資料模型
 

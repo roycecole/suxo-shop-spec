@@ -22,6 +22,7 @@
 | v0.17 | 2026-09-10 | ordinarycas | 訂正 §1 v0.15 遺留的落差：當時「單一 VPS 備份/災難復原策略」移出本表時，只是因為 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5 補上了技術方案的**設計**，但 `ecommerce-services`／`ecommerce-launch` 的 `docker-compose.yml` 從未真的包含備份機制，本表當時的「已定案」等於誤把「設計完成」當成「已解決」。本輪已在兩個 repo 補上真正的實作並實測（`postgres-backup` sidecar、還原至全新 Postgres 全流程驗證），[10-gap-analysis.md](10-gap-analysis.md) 對應列與 [06](06-ecommerce-platform-architecture.md) §6.5 已同步訂正；本表 §1–§6 本身不需要異動（該項先前已移出所有表格，沒有殘留列），僅記錄此次來源文件訂正以保持索引同步，統計數字不變（8 項未解決 + 71 項已解決） |
 | v0.18 | 2026-09-10 | ordinarycas | 同步 [17-service-order.md](17-service-order.md) v0.12：修正 Analytics 批次拉取已完成子訂單的核心缺口時，核對程式碼發現沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」），屬全新發現的待決議項，源文件已補上 `- [ ]`，§4 新增對應列；[22-service-analytics.md](22-service-analytics.md) v0.7 同一輪新增的「已完成子訂單事後轉 Cancelled/Refunded 是否沖銷 GMV」屬當輪提出即當輪解決（定案不做自動沖銷），未曾以未解決狀態存在過，故不列入本表異動；統計訂正為 9 項未解決 + 71 項已解決 |
 | v0.19 | 2026-09-10 | ordinarycas | 同步 [17-service-order.md](17-service-order.md) v0.14：結帳冪等性修正（`POST /api/v1/orders/checkout` 原本無冪等保護，重試/雙重點擊會建立重複訂單、重複扣庫存/優惠券使用次數）的刻意簡化取捨——購物車一旦被標記已結帳即永久不可再結帳，即使該次結帳最終失敗，源文件已補上對應 `- [ ]`，§4 新增對應列；統計訂正為 10 項未解決 + 71 項已解決 |
+| v0.20 | 2026-09-11 | ordinarycas | 同步 [17-service-order.md](17-service-order.md) v0.16：§4 移除「Order / 沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`」列——已定案解決，採方案 (c) 出貨後 5 天自動完成（背景排程），過程中一併發現並修正 Reviews Service 呼叫的內部端點先前在 Order Service 端從未實作的獨立缺口，兩者已於真實 Docker Compose 環境端到端驗證；改用腳本逐行核對 §2–§5 列數，統計訂正為 9 項未解決 + 72 項已解決 |
 
 ## 使用說明
 
@@ -59,7 +60,6 @@
 |---|---|
 | Payment | 三家廠商沙箱實測，**需要外部資源**（金流商測試環境憑證，已補上取得憑證後的 4 步驟執行清單）（[18](18-service-payment.md) §8） |
 | Shipping | 超商取貨門市選擇未串接，**需要外部資源**（超商官方地圖 API 合作資格，已補上取得資格後的 4 步驟執行清單）（[21](21-service-shipping.md) §5） |
-| Order | 沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」，08 §1 列出的「標記已完成」規格尚未落地），修正 Analytics 批次拉取核心缺口時意外發現；**需要產品層級決策**（誰觸發完成？賣家主動標記／買家確認收貨／出貨後 N 天自動完成／併存，四種方案對通知時機與 Reviews 評價開放資格皆有不同影響，已補上待答子問題）（[17](17-service-order.md) §6） |
 | Order | 結帳冪等性修正的刻意簡化：購物車一旦被標記已結帳即永久不可再結帳，即使該次結帳最終失敗（庫存不足/優惠券被拒/Payment 失敗），也不會解除標記，買家需以新購物車重試；**待確認 UX 取捨是否可接受**，若不可接受需重新設計 WMS/Promotions 唯一約束範圍以支援安全重試（[17](17-service-order.md) §4.2/§6） |
 
 ## 5. 跨服務/基礎設施（[26](26-project-structure.md)–[29](29-shared-service-conventions.md)）
