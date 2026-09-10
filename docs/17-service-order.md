@@ -13,6 +13,7 @@
 | v0.8 | 2026-09-10 | ordinarycas | §6 逾時未付款自動取消待決議項已解決：定案 30 分鐘門檻（僅線上付款適用）、背景排程每 5 分鐘掃描、取消時觸發既有補償鏈，回應「將待決議事項列出來實作」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | §2.1 訂單編號產生規則從「暫定方案」正式定案為永久設計（理由：序號式編號會洩漏營業量、需要額外的集中計數基礎設施，划不來），追加防碰撞重試機制（最多 3 次）；§6 對應待決議項標記完全解決，回應「繼續補完 9 項未解決」需求 |
 | v0.10 | 2026-09-10 | ordinarycas | §4.1 新增 `SagaCompensationFailedStep.Payment`（稽核發現的分散式正確性缺口）：結帳 Saga 步驟 6 呼叫 Payment 若逾時/連線中斷，Order 無法區分「請求未送達」與「Payment 已處理但回應遺失」，原補償鏈只還原優惠券、釋放庫存，遺漏收斂 Payment 端可能留下的孤兒付款紀錄——比照對帳（只比對 `Status=Success`）與逾時未付款自動取消（只挑 `Order.Status=Pending`）都不會再碰到這批訂單，屬於原設計的死角；Payment 新增 `POST /internal/v1/payments/orders/{orderId}/cancel` 配合收斂，見 [18-service-payment.md](18-service-payment.md) 同步更新 |
+| v0.11 | 2026-09-10 | ordinarycas | §2 新增 2.2 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Order.GuestEmail`/`PaymentMethod`/`WmsReservationId`/`CouponCode`/`CouponVendorId`（皆為骨架階段依自動取消/補償鏈需求新增、規格表格原未列出）、`SubOrder.VendorId`/`CommissionRate`/`ShippedAt`、`OrderItem.ProductId`；確認 `Order → SubOrder → OrderItem` 為資料庫層級強制外鍵（級聯刪除），`SagaCompensationFailure.OrderId` 未建 FK（僅索引），ERD 依此如實不畫該關聯線 |
 
 ## 1. 職責
 
@@ -22,9 +23,9 @@
 
 | 實體 | 說明 |
 |---|---|
-| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal、PaymentStatus |
-| SubOrder | 依賣家拆分的子訂單，Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、CommissionAmount（= 該 SubOrder 小計 × 結帳當下向 Vendor Service 查得的 `CommissionRate`，見 §4） |
-| OrderItem | ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
+| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
+| SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable） |
+| OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
 
 ### 2.1 訂單編號（OrderNumber）產生規則（正式定案）
 
@@ -39,6 +40,70 @@ ORD{yyyyMMdd}{8 位大寫十六進位亂數}
 - **亂數部分**：一組新產生 GUID 的前 8 個十六進位字元，轉大寫；不是遞增序號，看不出「今天第幾筆訂單」——這是刻意的，見上方定案理由。
 - **唯一性與防碰撞（本輪補上重試機制）**：`OrderNumber` 欄位維持資料庫層級的唯一索引（`varchar(50)`）。**新增**：`CheckoutOrderCommandHandler` 建立 Order 那一步改為捕捉唯一約束違反的例外，重新產生一組編號後重試，最多重試 3 次（3 次都撞號則視為異常，讓結帳失敗並記錄 ERROR log，交由 `PlatformSupportStaff` 排查——這種情況在數學上幾乎不可能發生，重試 3 次還撞號更可能代表程式邏輯出了其他問題，而非單純運氣不好）。這個改動很小（8 位十六進位＝32 bits 的亂數空間，以這個規模的單一賣家部署，先前的零重試設計其實已經夠安全），但退回訂單建立失敗這種結帳最後一步的行為就算機率再低也值得用幾行程式碼堵起來，這是本輪追加的健全性強化，不是重新設計。
 - **用途**：買家/客服對外溝通與訪客查單（`POST /api/v1/orders/lookup`，見 §5）、LINE 通知訊息（[23-service-notification.md](23-service-notification.md)）皆用這組編號，不是內部 `Order.Id`（GUID 主鍵）。
+
+### 2.2 ERD
+
+```mermaid
+erDiagram
+    Order ||--o{ SubOrder : "依賣家拆分"
+    SubOrder ||--o{ OrderItem : "商品項目"
+
+    Order {
+        uuid Id PK
+        string OrderNumber "unique, ORD+yyyyMMdd(UTC)+8hex, see 2.1"
+        uuid BuyerId "nullable, cross-service ref, Identity Service, no FK"
+        string GuestEmail "nullable, guest lookup only"
+        OrderStatus Status
+        PaymentStatus PaymentStatus
+        string PaymentMethod "snapshot, excludes COD from auto-cancel"
+        uuid WmsReservationId "cross-service ref, WMS Service, no FK"
+        string CouponCode "nullable, snapshot for compensation revert"
+        uuid CouponVendorId "nullable, cross-service ref, Vendor Service, no FK"
+        decimal Subtotal
+        decimal ShippingFee
+        decimal TaxTotal
+        decimal DiscountTotal
+        decimal GrandTotal
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    SubOrder {
+        uuid Id PK
+        uuid OrderId FK
+        uuid VendorId "cross-service ref, Vendor Service, no FK"
+        SubOrderStatus Status
+        decimal Subtotal
+        decimal CommissionRate "snapshot at checkout"
+        decimal CommissionAmount "= Subtotal x CommissionRate"
+        datetimeoffset ShippedAt "nullable"
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    OrderItem {
+        uuid Id PK
+        uuid SubOrderId FK
+        uuid ProductId "cross-service ref, Catalog Service, no FK"
+        string ProductNameSnapshot
+        string SkuSnapshot
+        decimal Price "unit price snapshot"
+        int Quantity
+        datetimeoffset CreatedAt
+    }
+    SagaCompensationFailure {
+        uuid Id PK
+        uuid OrderId "references Order.Id, indexed only, no FK constraint"
+        SagaCompensationFailedStep FailedStep "Wms/Promotions/Payment; Payment added this session"
+        string FailedAction
+        int RetryCount
+        string LastError
+        SagaCompensationFailureStatus Status
+        datetimeoffset CreatedAt
+        datetimeoffset ResolvedAt "nullable"
+        uuid ResolvedByStaffId "nullable, cross-service ref, Identity Service PlatformSupportStaff, no FK"
+    }
+```
+
+> `Order`—`SubOrder`（`OrderConfiguration.HasMany(o => o.SubOrders).WithOne(...).HasForeignKey(s => s.OrderId).OnDelete(Cascade)`）與 `SubOrder`—`OrderItem`（`SubOrderConfiguration` 同樣模式）皆已對照 Infrastructure 層 `Configurations/*.cs` 確認為資料庫層級強制外鍵，刪除時串聯刪除。`SagaCompensationFailure`（§4.1 新增實體）的 `OrderId` 未在 `SagaCompensationFailureConfiguration` 設定 `HasForeignKey`，只建了索引，本圖故不畫關聯線（邏輯上仍對應同一筆 `Order`，見 §4.1）。`Order.BuyerId`/`WmsReservationId`/`CouponVendorId`、`SubOrder.VendorId`、`OrderItem.ProductId`、`SagaCompensationFailure.ResolvedByStaffId` 皆為跨服務參照（依序為 Identity／WMS／Vendor／Vendor／Catalog／Identity 的 `PlatformSupportStaff` 帳號），依本平台既有慣例只存 ID、不建 FK。
 
 ## 3. 爸芭樂案例
 

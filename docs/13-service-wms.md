@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | [10-gap-analysis.md](10-gap-analysis.md) 第七輪跨文件複查發現：[30-open-decisions-register.md](30-open-decisions-register.md) 一直假設本服務有「Saga 補償失敗」待決議項（§1 前 10 名、§6 重複項目都引用了 §6 的這個項目），但本文件實際上從未寫過，屬於遺漏；本次補上 |
 | v0.3 | 2026-09-09 | ordinarycas | §6 Saga 補償失敗待決議項標記已解決，統一設計見 [17-service-order.md](17-service-order.md) §4.1 |
 | v0.4 | 2026-09-10 | ordinarycas | §6 解決 3 項待決議：多倉現階段明確排除、效期商品新增每日自動處理排程、Catalog 呼叫失敗降級行為釐清為架構前提不成立（storefront 實際直接呼叫本服務，已有四態 UI），回應「將待決議事項列出來實作」需求 |
+| v0.5 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Inventory/StockBatch/StockReservation/StockLedger 四個實體；交叉核對 `ecommerce-services` 實際程式碼後發現 §2 表格文字未反映 v0.4 效期排程已解決項新增的 `StockBatch.IsNearExpiry`/`RemainingQuantity` 欄位與 `StockLedgerEntryType.Expired` 異動種類，已補上。四個實體彼此之間確認**沒有**資料庫層級外鍵關係（僅透過 `ProductId`/`VariationId` 慣例對應，且該欄位是對 Catalog Service 的跨服務參照），ER 圖因此不畫任何關聯線 |
 
 ## 1. 職責
 
@@ -17,9 +18,58 @@
 | 實體 | 說明 |
 |---|---|
 | Inventory | ProductId/VariationId、StockQuantity、`BackorderPolicy`（enum：`NotAllowed`/`Allowed`/`AllowedWithNotify`，供 WooCommerce 匯出的 `Backorders allowed?` 欄位使用；與 `StockStatus` 的當下狀態快照語意不同，不能借用） |
-| StockBatch | 入庫批次，含 BatchNo、有效期、數量（生鮮商品先進先出用） |
+| StockBatch | 入庫批次，含 BatchNo、有效期（ExpiryDate）、入庫數量（Quantity）與剩餘數量（RemainingQuantity，生鮮商品先進先出用）、`IsNearExpiry`（效期 3 天內到期旗標，供前台/後台顯示「即期品」徽章，見 §6 效期排程已解決項） |
 | StockReservation | 結帳 Saga 建立的庫存預留紀錄，含 `Released` 旗標避免重複釋放 |
-| StockLedger | 庫存異動歷程（入庫/出庫/預留/釋放），供 `PlatformSupportStaff` 排查異常 |
+| StockLedger | 庫存異動歷程（`EntryType`：入庫/出庫/預留/釋放/**效期已過**），供 `PlatformSupportStaff` 排查異常 |
+
+### 2.1 ER 圖
+
+本服務 4 個實體彼此之間**沒有**資料庫層級的外鍵關係——皆各自獨立的表，僅透過 `ProductId`/`VariationId` 依慣例對應同一商品/變體（該欄位是對 Catalog Service 的跨服務參照，資料庫層級無 FK 約束；`StockReservation.OrderId` 同理參照 Order Service）。`StockLedger.ReferenceId` 依 `EntryType` 可能指向同服務內 `StockReservation.Id` 或 `StockBatch.Id`，但這是應用層慣例，並非資料庫外鍵。因此下圖 4 個實體之間不畫任何關聯線。
+
+```mermaid
+erDiagram
+    Inventory {
+        uuid Id PK
+        uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
+        uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        int StockQuantity
+        enum BackorderPolicy
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    StockBatch {
+        uuid Id PK
+        uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
+        uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        string BatchNo
+        date ExpiryDate "nullable"
+        int Quantity
+        int RemainingQuantity
+        bool IsNearExpiry
+        datetime InboundAt
+        datetime CreatedAt
+    }
+    StockReservation {
+        uuid Id PK
+        uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
+        uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        uuid OrderId "跨服務參照 Order Service，無 FK"
+        int Quantity
+        bool Released
+        datetime CreatedAt
+        datetime ReleasedAt "nullable"
+    }
+    StockLedger {
+        uuid Id PK
+        uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
+        uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        enum EntryType
+        int QuantityDelta
+        uuid ReferenceId "nullable，依 EntryType 指向 StockReservation.Id 或 StockBatch.Id，服務內亦無 DB 層 FK"
+        string Note "nullable"
+        datetime OccurredAt
+    }
+```
 
 ## 3. 爸芭樂案例
 
