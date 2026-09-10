@@ -147,7 +147,7 @@ sequenceDiagram
         Catalog-->>Order: 售價／CategoryIds／VendorId（查無資料的商品不列入回應，VendorId 為 v0.15 擴充）
         alt 買家送來的價格或賣家歸屬與 Catalog 不符，或商品查無資料
             Order-->>Buyer: 結帳失敗（價格已變動或賣家歸屬不符，請重新整理購物車；購物車未被標記已結帳，可重試）
-        else 價格核對相符
+        else 價格與賣家歸屬皆核對相符
             Order->>Cart: 步驟 1.6（v0.14 新增）：原子條件更新標記購物車已結帳
             alt 標記失敗（已被標記過）
                 Order->>Order: 回頭查 Orders 表
