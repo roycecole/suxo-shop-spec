@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-10 | ordinarycas | §3 `Payment.Status` 新增 `Cancelled`；§7 新增 `POST /internal/v1/payments/orders/{orderId}/cancel`——結帳 Saga 步驟 6 呼叫本服務若逾時/連線中斷，Order 無法區分「請求未送達」與「本服務已處理但回應遺失」，新端點供 Order 的補償鏈冪等收斂可能留下的孤兒付款紀錄；發現有 `Status=Success` 的紀錄時拒絕取消（409），需人工介入，詳見 [17-service-order.md](17-service-order.md) §4.1（稽核發現的分散式正確性缺口） |
 | v0.6 | 2026-09-10 | ordinarycas | §3 新增 3.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上 `PaymentReconciliationDiscrepancy` 實體——§8「對帳排程」設計早已定案且程式碼已建表，但 §3 資料模型表格先前漏列這張表，本輪補上；`PaymentProviderSettings`/`PaymentCallbackLog` 兩列補上完整欄位名稱。確認 `PaymentCallbackLog.PaymentId`／`PaymentReconciliationDiscrepancy.PaymentId` 皆為資料庫層級的選擇性外鍵（`OnDelete(Restrict)`） |
 | v0.7 | 2026-09-10 | ordinarycas | §8 補充說明：核對 `ecommerce-services` 現行程式碼後發現「呼叫尚未串接沙箱環境的操作」（四家廠商的退款、LINE Pay 的建立導轉表單/回調驗章）先前會讓 `NotImplementedException` 原樣洩漏成未處理的 HTTP 500，賣家/呼叫端無法區分「操作真的失敗」與「系統故障」；已於程式碼修正為統一的乾淨 503 Problem Details（回應內容明確告知該操作尚未串接、須人工處理），回應「修這個 ungraceful crash」需求。此為錯誤處理層面的修正，不影響本節既有「實際串接仍待沙箱環境」的待決議狀態 |
+| v0.8 | 2026-09-11 | ordinarycas | §7 修正嚴重授權缺口：核對 `ecommerce-services` 現行程式碼後發現 `mark-cod-received` 與退款端點（後者先前未列入本表，一併補上該列）的「認證」欄位雖寫「賣家」，程式碼卻只驗證呼叫者「是某個已驗證賣家」，從未驗證「是否為該筆訂單實際歸屬賣家」——任一已驗證賣家皆可對平台上任意其他賣家的訂單標記 COD 已收款或發起退款，影響真實收款狀態與金流。已於程式碼修正（VendorPaymentsController 比照 12-service-catalog.md §5 賣家商品端點既有的歸屬驗證模式：不符合時回應與「訂單不存在」相同的 404，不區分兩者以避免洩漏其他賣家的訂單存在與否）；因本服務 `Payment` 實體不持有 VendorId（見 §3），且一張訂單可能依商品所屬賣家拆成多筆 SubOrder（[17-service-order.md](17-service-order.md) §4 結帳 Saga），驗證需即時向 Order Service 查詢該訂單的 SubOrder 賣家清單（新增 `GET /internal/v1/orders/{orderId}/vendor-ids` 內部端點），查詢失敗時 fail closed 回應 503，不可誤放行 |
 
 ## 1. 職責
 
@@ -119,8 +120,11 @@ HashKey/HashIV 以 Data Protection 加密後存入資料庫，後台不回傳明
 | `POST /internal/v1/payments/orders/{orderId}/cancel` | 結帳 Saga 補償鏈呼叫（[17-service-order.md](17-service-order.md) §4.1）：Order 若無法確認上一列端點的請求是否送達，呼叫本端點冪等收斂——找不到付款紀錄則無動作，`Pending` 紀錄轉 `Cancelled`（§3），已是其他終態則視為已處理；若已有 `Status=Success` 則回 409（金流商其實已收款，不可取消，需人工介入） | 內部（僅 Order Service） |
 | `POST /api/v1/payments/callback/{provider}` | 金流商 server-to-server 回調 | 對外開放（簽章驗證） |
 | `GET /api/v1/vendor/payment-settings` | 賣家查看/設定逐廠商啟用狀態 | 賣家 |
-| `PUT /api/v1/vendor/payments/{orderId}/mark-cod-received` | 賣家標記 COD 訂單已當面收款（`Payment.Status` → `Success`） | 賣家 |
+| `PUT /api/v1/vendor/payments/{orderId}/mark-cod-received` | 賣家標記 COD 訂單已當面收款（`Payment.Status` → `Success`） | 賣家，**僅限該訂單實際歸屬賣家**（見下方說明） |
+| `POST /api/v1/vendor/payments/{orderId}/refund` | 賣家在後台對某筆訂單發起退款（§8 定案流程；v0.8 補上此前遺漏的路由列） | 賣家，**僅限該訂單實際歸屬賣家**（見下方說明） |
 | `GET /internal/v1/payments/support/{orderId}/callback-log` | 供 `PlatformSupportStaff` 查看回調紀錄，排查金流異常 | 內部 + PlatformSupportStaff |
+
+> **賣家歸屬驗證（v0.8 新增，2026-09-11 資安修正）**：上面兩個賣家端點的「賣家」認證，指的不只是「呼叫者是某個已驗證賣家」，還必須是「該筆訂單實際歸屬的賣家」——修正前程式碼只驗證前者，任一已驗證賣家皆可對平台上任意其他賣家的訂單標記 COD 已收款或發起退款。本服務的 `Payment` 實體本身不持有 `VendorId`（見 §3），且一張訂單可能依商品所屬賣家拆成多筆 `SubOrder`（[17-service-order.md](17-service-order.md) §4 結帳 Saga 步驟 5），因此歸屬驗證無法只靠本服務自己的資料回答，須即時呼叫 Order Service 新增的 `GET /internal/v1/orders/{orderId}/vendor-ids` 內部端點查詢該訂單的 SubOrder 賣家清單。不符合時回應與「訂單不存在」相同的 404（不區分兩者，避免洩漏其他賣家的訂單是否存在，比照 [12-service-catalog.md](12-service-catalog.md) §5 賣家商品端點既有的歸屬驗證模式）；查詢 Order Service 失敗時 fail closed 回應 503，不可誤放行。
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
