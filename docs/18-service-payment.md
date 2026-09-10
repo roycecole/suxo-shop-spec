@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-10 | ordinarycas | §8 處理 3 項待決議：沙箱實測標記為需要外部資源（金流商測試環境憑證），退款串接與對帳排程補上完整設計（實際 API 串接仍待沙箱環境），回應「將待決議事項列出來實作」需求 |
 | v0.4 | 2026-09-10 | ordinarycas | §8 沙箱實測項目補上取得憑證後的執行清單（4 個步驟），縮短拿到廠商測試環境後的等待時間，回應「繼續補完 9 項未解決」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §3 `Payment.Status` 新增 `Cancelled`；§7 新增 `POST /internal/v1/payments/orders/{orderId}/cancel`——結帳 Saga 步驟 6 呼叫本服務若逾時/連線中斷，Order 無法區分「請求未送達」與「本服務已處理但回應遺失」，新端點供 Order 的補償鏈冪等收斂可能留下的孤兒付款紀錄；發現有 `Status=Success` 的紀錄時拒絕取消（409），需人工介入，詳見 [17-service-order.md](17-service-order.md) §4.1（稽核發現的分散式正確性缺口） |
+| v0.6 | 2026-09-10 | ordinarycas | §3 新增 3.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上 `PaymentReconciliationDiscrepancy` 實體——§8「對帳排程」設計早已定案且程式碼已建表，但 §3 資料模型表格先前漏列這張表，本輪補上；`PaymentProviderSettings`/`PaymentCallbackLog` 兩列補上完整欄位名稱。確認 `PaymentCallbackLog.PaymentId`／`PaymentReconciliationDiscrepancy.PaymentId` 皆為資料庫層級的選擇性外鍵（`OnDelete(Restrict)`） |
 
 ## 1. 職責
 
@@ -31,8 +32,67 @@
 | 實體 | 說明 |
 |---|---|
 | Payment | OrderId、Method（CreditCard/LinePay/ATM/CVS/COD）、Provider、Status（Pending/Success/Failed/Refunded/**Cancelled**——新增值，結帳 Saga 補償鏈透過 §7 新增的取消端點收斂孤兒付款紀錄時使用，語意是「我方在不確定金流商是否收到請求的情況下主動關閉」，與金流商明確回報失敗的 `Failed` 區分，見 [17-service-order.md](17-service-order.md) §4.1）、TransactionId、`ProviderTransactionId`（廠商端交易序號，如 ECPay 的 `TradeNo`；COD 無廠商回調，此欄位為 null）、Amount/PaidAt。`(Provider, ProviderTransactionId)` 唯一索引（`ProviderTransactionId` 非 null 時），作為回調去重的資料層保證。OrderId 僅一般索引、非唯一鍵——理論上一筆訂單可能有不只一筆 `Payment` |
-| PaymentProviderSettings | 逐廠商的啟用狀態、加密後的商店代號/金鑰 |
-| PaymentCallbackLog | 所有回調（含驗章失敗者）都寫入，**永不刪除**，是對帳爭議的唯一證據 |
+| PaymentProviderSettings | 逐廠商的啟用狀態（IsEnabled/IsTestMode）與加密後的商店代號/金鑰（MerchantIdEncrypted/HashKeyEncrypted/HashIvEncrypted，見 §5）；`Provider` 唯一，每家廠商一筆設定 |
+| PaymentCallbackLog | 所有回調（含驗章失敗者）都寫入，**永不刪除**，是對帳爭議的唯一證據；欄位含 PaymentId（比對不出對應訂單時為 null）、RawPayload（原始回調內容，不拆解儲存）、SignatureValid、ProcessingResult（見 §4 三道防線，含 §8 退款設計新增的 RefundAccepted/RefundFailed）、ReceivedAt、Notes |
+| PaymentReconciliationDiscrepancy | §8「對帳排程」比對 `PaymentCallbackLog` 與金流商對帳明細後標記出的每筆落差：Provider、ProviderTransactionId、PaymentId（金流商有收款但本服務查無記錄時為 null）、Type（`ProviderHasPaymentWeDoNot`/`WeHavePaymentProviderDoesNot`）、OurAmount/ProviderAmount、StatementDate、Status（Open/Resolved）——比照 [17-service-order.md](17-service-order.md) §4.1 `SagaCompensationFailure` 的人工介入模式，不自動修正金流資料。本服務先前只在 §8 待決議文字內描述此表設計，程式碼已建表，§3 表格原漏列，本輪補上 |
+
+### 3.1 ERD
+
+```mermaid
+erDiagram
+    Payment |o--o{ PaymentCallbackLog : "回調紀錄"
+    Payment |o--o{ PaymentReconciliationDiscrepancy : "對帳異常"
+
+    Payment {
+        uuid Id PK
+        uuid OrderId "cross-service ref, Order Service, no FK, non-unique index"
+        PaymentMethod Method
+        PaymentProvider Provider "nullable, null for COD"
+        PaymentStatus Status "Cancelled added this session"
+        string TransactionId "internal transaction id"
+        string ProviderTransactionId "nullable, unique with Provider"
+        decimal Amount
+        datetimeoffset PaidAt "nullable"
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    PaymentCallbackLog {
+        uuid Id PK
+        PaymentProvider Provider
+        uuid PaymentId FK "nullable"
+        string RawPayload "full payload, never deleted"
+        bool SignatureValid
+        CallbackProcessingResult ProcessingResult
+        datetimeoffset ReceivedAt
+        string Notes "nullable"
+    }
+    PaymentProviderSettings {
+        uuid Id PK
+        PaymentProvider Provider "unique"
+        bool IsEnabled
+        bool IsTestMode
+        string MerchantIdEncrypted "nullable, encrypted"
+        string HashKeyEncrypted "nullable, encrypted"
+        string HashIvEncrypted "nullable, encrypted"
+        datetimeoffset UpdatedAt
+    }
+    PaymentReconciliationDiscrepancy {
+        uuid Id PK
+        PaymentProvider Provider
+        string ProviderTransactionId
+        uuid PaymentId FK "nullable"
+        ReconciliationDiscrepancyType Type
+        decimal OurAmount "nullable"
+        decimal ProviderAmount "nullable"
+        date StatementDate
+        datetimeoffset DetectedAt
+        ReconciliationDiscrepancyStatus Status
+        datetimeoffset ResolvedAt "nullable"
+        uuid ResolvedByStaffId "nullable, cross-service ref, Identity Service PlatformSupportStaff, no FK"
+    }
+```
+
+> `PaymentCallbackLog.PaymentId`／`PaymentReconciliationDiscrepancy.PaymentId` 皆已對照 `PaymentCallbackLogConfiguration`／`PaymentReconciliationDiscrepancyConfiguration` 確認為資料庫層級外鍵（`HasOne<Payment>().WithMany().HasForeignKey(...).OnDelete(Restrict)`），且皆為可為 null 的選擇性關聯（驗章失敗或對帳時比對不出對應 `Payment` 皆可能發生），故以 `|o` 表示零或一。`PaymentProviderSettings` 與其餘三個實體之間沒有任何外鍵——逐廠商設定是獨立表，`Provider` 只是共同的列舉值，不是關聯鍵。`Payment.OrderId` 是跨服務參照 Order Service 的 `Order.Id`，只建一般索引、非唯一鍵（同一訂單理論上可能有不只一筆 `Payment`，如失敗重試），不建 FK。`PaymentReconciliationDiscrepancy.ResolvedByStaffId` 比照 [17-service-order.md](17-service-order.md) `SagaCompensationFailure.ResolvedByStaffId` 的既有模式，參照 Identity Service 的 `PlatformSupportStaff` 帳號，同樣不建 FK。
 
 ## 4. 回調安全機制（三道防線）
 
