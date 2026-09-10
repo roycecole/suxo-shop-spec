@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-09 | ordinarycas | §4 補上熱銷排行/付款分布的圖表函式庫選型：Chart.js（`react-chartjs-2`），與 Lightweight Charts 職責互補；§6 對應待決議項標記已解決 |
 | v0.5 | 2026-09-10 | ordinarycas | §6 解決 2 項待決議：報表查詢效能定案即時彙總已投影資料即可、報表匯出補上 CSV 端點設計（尚未實作），回應「將待決議事項列出來實作」需求 |
 | v0.6 | 2026-09-10 | ordinarycas | §2 新增 2.1 服務內部資料表與 ER 圖（Mermaid erDiagram）：依 `ecommerce-services/services/analytics` 實作程式碼補上原本完全未列出的 5 張投影/狀態表（`SalesDailySummary`/`PaymentMethodDistribution`/`TopProductRanking`/`DataSourceSyncState`/`AnalyticsExportJob`）——§2 原表格只列資料來源服務，未列本服務自己實際落地的資料表 |
+| v0.7 | 2026-09-10 | ordinarycas | 修正批次拉取已完成子訂單的核心缺口（稽核發現：`ecommerce-services` 的 `HttpOrderDataSource` 呼叫的 `GET internal/v1/orders/support/completed` 在 Order Service 端原本不存在，每小時批次拉取永遠 404，GMV/熱銷排行/付款方式分布從未反映過任何真實訂單，[17-service-order.md](17-service-order.md) 同步新增該端點與 `SubOrder.CompletedAt`，見該文件 v0.12）：§2.1 GMV 欄位補上既有程式碼註解就已隱含、但文件從未寫出的語意說明；§6 新增一項已解決的設計待決議——已完成子訂單事後轉 Cancelled/Refunded 是否應反向沖銷 GMV，定案不做自動沖銷 |
 
 ## 1. 職責
 
@@ -28,7 +29,7 @@
 
 | 實體 | 說明 |
 |---|---|
-| SalesDailySummary | 賣家 × 日彙總：GMV、訂單數、幣別、最近一次來源同步時間；供銷售趨勢/GMV 走勢使用（§4 TradingView Lightweight Charts，§5 `GET .../sales`） |
+| SalesDailySummary | 賣家 × 日彙總：GMV（**毛額**，含尚未扣除的退款——見 §6 v0.7 已解決的設計待決議）、訂單數、幣別、最近一次來源同步時間；供銷售趨勢/GMV 走勢使用（§4 TradingView Lightweight Charts，§5 `GET .../sales`） |
 | PaymentMethodDistribution | 賣家 × 統計區間 × 付款方式彙總：交易筆數、總金額；供付款方式分布圖使用（§4 Chart.js）——骨架階段尚未串接對應 API 端點與 Controller |
 | TopProductRanking | 賣家 × 統計區間 × 商品彙總：商品名稱快照、銷售數量、金額、名次；供熱銷商品排行使用（§4 Chart.js，§5 `GET .../top-products`） |
 | DataSourceSyncState | 依來源服務（Order/Catalog/Payment）各一筆，記錄批次拉取游標與最近執行狀態，供增量拉取使用；非業務實體，是落實 §1「定期輪詢/批次拉取」架構所需的基礎設施狀態表，規格文件未明確定義過這張表 |
@@ -139,3 +140,4 @@ erDiagram
 - [x] ~~報表查詢效能：直接對交易表即時彙總，資料量成長後需評估預先彙總表或物化檢視~~——**已解決：現階段對已拉取的投影資料即時彙總即可，不另建物化檢視**。理由：本服務的資料來源本來就是「定期輪詢/批次拉取其他服務資料、建置自己的投影」（見 §1），不是對 Order/Payment 等服務的原始交易表直接下即時查詢——投影資料本身規模已受限於拉取頻率與單一客戶的實際訂單量（非高流量部署，見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），對這個已經縮小過的投影資料做即時彙總，效能疑慮不大。若未來特定報表查詢真的量測到效能問題，再針對那個查詢加物化檢視，不需要現在對全部報表預先假設都需要
 - [x] ~~報表匯出（CSV/Excel）供會計對帳~~——**部分解決（設計已補齊，尚未實作）**：新增 `GET /api/v1/vendor/analytics/export?format=csv&from=...&to=...` 端點，沿用本平台既有的 CSV 匯出模式（比照 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §5.5 WooCommerce 匯出的背景 Worker + 下載連結模式，非同步產生大檔案、避免請求逾時），欄位涵蓋日期/GMV/訂單數/付款方式分布，供會計比對；Excel（`.xlsx`）格式優先度低於 CSV（CSV 已可被 Excel 開啟，多數會計對帳流程用 CSV 即足夠），暫不特別實作 `.xlsx` 格式。**仍待實作**：`ecommerce-services` 目前 Analytics Service 僅有唯讀查詢端點，尚未加上匯出端點，記錄設計避免又成為只活在腦中的缺口
 - [x] ~~熱銷排行/付款分布的圖表函式庫選型（見 §4，Lightweight Charts 不適用）~~——**已解決**：採 Chart.js（`react-chartjs-2`），見 §4
+- [x] ~~已完成子訂單事後轉為 Cancelled/Refunded，是否應反向沖銷已寫入 SalesDailySummary/TopProductRanking 的 GMV/銷售數量？（v0.7 修正批次拉取核心缺口時一併浮現，原文件未觸及）~~——**已解決：不做自動沖銷**。理由：(1) §2.1 `SalesDailySummary.GrossMerchandiseValue` 本來就是「完成當下的毛額快照」，含尚未扣除的退款，不是即時淨額，這不是本輪才引入的新語意；(2) 截至本輪，`ecommerce-services` 沒有任何程式碼路徑會把已 `Completed` 的 SubOrder 轉為 `Cancelled`/`Refunded`（甚至沒有任何路徑會轉為 `Completed`，見 [17-service-order.md](17-service-order.md) §6 新增的待決議項），這是完全假設性的情境，沒有真實資料可驗證任何設計是否正確；(3) 若要支援，[17-service-order.md](17-service-order.md) §5 `GET internal/v1/orders/support/completed` 現在的查詢契約（只回「目前狀態是 Completed」的列）天生抓不到「曾經 Completed、現在不是了」這批列，需要 Order Service 額外設計一套「狀態異動事件流」才能讓本服務發現逆向異動——這是比「把批次拉取端點修好」大得多的新設計，貿然實作等於在沒有真實情境驗證的前提下猜一個可能整個猜錯方向的方案。若日後 [17-service-order.md](17-service-order.md) 的子訂單完成機制定案、且賣家/客服真的反應「退款後 GMV 沒有隨之下修」造成報表誤導，屬於可獨立排入的後續工作，不影響本輪判斷

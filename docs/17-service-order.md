@@ -14,6 +14,7 @@
 | v0.9 | 2026-09-10 | ordinarycas | §2.1 訂單編號產生規則從「暫定方案」正式定案為永久設計（理由：序號式編號會洩漏營業量、需要額外的集中計數基礎設施，划不來），追加防碰撞重試機制（最多 3 次）；§6 對應待決議項標記完全解決，回應「繼續補完 9 項未解決」需求 |
 | v0.10 | 2026-09-10 | ordinarycas | §4.1 新增 `SagaCompensationFailedStep.Payment`（稽核發現的分散式正確性缺口）：結帳 Saga 步驟 6 呼叫 Payment 若逾時/連線中斷，Order 無法區分「請求未送達」與「Payment 已處理但回應遺失」，原補償鏈只還原優惠券、釋放庫存，遺漏收斂 Payment 端可能留下的孤兒付款紀錄——比照對帳（只比對 `Status=Success`）與逾時未付款自動取消（只挑 `Order.Status=Pending`）都不會再碰到這批訂單，屬於原設計的死角；Payment 新增 `POST /internal/v1/payments/orders/{orderId}/cancel` 配合收斂，見 [18-service-payment.md](18-service-payment.md) 同步更新 |
 | v0.11 | 2026-09-10 | ordinarycas | §2 新增 2.2 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Order.GuestEmail`/`PaymentMethod`/`WmsReservationId`/`CouponCode`/`CouponVendorId`（皆為骨架階段依自動取消/補償鏈需求新增、規格表格原未列出）、`SubOrder.VendorId`/`CommissionRate`/`ShippedAt`、`OrderItem.ProductId`；確認 `Order → SubOrder → OrderItem` 為資料庫層級強制外鍵（級聯刪除），`SagaCompensationFailure.OrderId` 未建 FK（僅索引），ERD 依此如實不畫該關聯線 |
+| v0.12 | 2026-09-10 | ordinarycas | 修正 Analytics Service 批次拉取已完成子訂單的核心缺口（稽核發現：`ecommerce-services` 的 `HttpOrderDataSource` 呼叫的端點原本不存在，每小時批次拉取永遠 404，見 [22-service-analytics.md](22-service-analytics.md) 同步更新）：§2 新增 `SubOrder.CompletedAt` 欄位並同步更新 §2.2 ERD；§5 新增 `GET internal/v1/orders/support/completed` 內部端點；§6 新增一項待決議——目前沒有任何程式碼路徑會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」，[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「標記已完成」規格尚未落地），這是核對程式碼時意外發現的獨立缺口，不在本輪修復範圍內 |
 
 ## 1. 職責
 
@@ -24,7 +25,7 @@
 | 實體 | 說明 |
 |---|---|
 | Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
-| SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable） |
+| SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable）、CompletedAt（進入 Completed 狀態的時間戳記，nullable，新增於 v0.12——供 Analytics Service §5 `GET internal/v1/orders/support/completed` 當增量拉取游標，刻意獨立於 UpdatedAt，理由見下方 2.2 ERD 備註） |
 | OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
 
 ### 2.1 訂單編號（OrderNumber）產生規則（正式定案）
@@ -76,6 +77,7 @@ erDiagram
         decimal CommissionRate "snapshot at checkout"
         decimal CommissionAmount "= Subtotal x CommissionRate"
         datetimeoffset ShippedAt "nullable"
+        datetimeoffset CompletedAt "nullable, added v0.12, see note below"
         datetimeoffset CreatedAt
         datetimeoffset UpdatedAt
     }
@@ -104,6 +106,8 @@ erDiagram
 ```
 
 > `Order`—`SubOrder`（`OrderConfiguration.HasMany(o => o.SubOrders).WithOne(...).HasForeignKey(s => s.OrderId).OnDelete(Cascade)`）與 `SubOrder`—`OrderItem`（`SubOrderConfiguration` 同樣模式）皆已對照 Infrastructure 層 `Configurations/*.cs` 確認為資料庫層級強制外鍵，刪除時串聯刪除。`SagaCompensationFailure`（§4.1 新增實體）的 `OrderId` 未在 `SagaCompensationFailureConfiguration` 設定 `HasForeignKey`，只建了索引，本圖故不畫關聯線（邏輯上仍對應同一筆 `Order`，見 §4.1）。`Order.BuyerId`/`WmsReservationId`/`CouponVendorId`、`SubOrder.VendorId`、`OrderItem.ProductId`、`SagaCompensationFailure.ResolvedByStaffId` 皆為跨服務參照（依序為 Identity／WMS／Vendor／Vendor／Catalog／Identity 的 `PlatformSupportStaff` 帳號），依本平台既有慣例只存 ID、不建 FK。
+>
+> **`SubOrder.CompletedAt`（v0.12 新增）為何獨立於 `UpdatedAt`**：`UpdatedAt` 任何欄位異動都會前進（如標記出貨、補償重試更新其他欄位），若拿來當 Analytics Service 增量拉取已完成子訂單的游標欄位，會讓 Analytics 漏抓「完成時間早、但之後又因無關原因被更新」的子訂單，或抓不到正確的增量邊界——這正是修正 Analytics 批次拉取核心缺口時（見本文件 v0.12 異動紀錄）需要一併解決的問題，故新增獨立欄位，只在 `Status` 轉為 `Completed` 那一刻設定，之後不再變動。
 
 ## 3. 爸芭樂案例
 
@@ -215,6 +219,7 @@ sequenceDiagram
 | `POST /api/v1/vendor/orders/{id}/ship` | 賣家標記出貨 | 賣家 |
 | `GET /internal/v1/orders/support/{id}/trace` | 供 `PlatformSupportStaff` 查看某筆訂單完整 Saga 執行軌跡（哪一步失敗、補償是否成功），用於排查卡單問題 | 內部 + PlatformSupportStaff |
 | `GET /internal/v1/orders/support/compensation-failures` | 供 `PlatformSupportStaff` 查詢待人工介入的補償失敗清單（§4.1） | 內部 + PlatformSupportStaff |
+| `GET /internal/v1/orders/support/completed` | 供 Analytics Service 定期批次拉取已完成子訂單，建置 GMV/熱銷商品排行/付款方式分布投影（[22-service-analytics.md](22-service-analytics.md) §1）。Query：`since`（ISO 8601，選填，未帶視同全量拉取）、`page`/`pageSize`（分頁 envelope 沿用 [09-api-specification.md](09-api-specification.md) §3）。過濾 `SubOrder.Status == Completed` 且 `CompletedAt` 嚴格晚於 `since`，依 `CompletedAt` 由舊到新排序；`paymentMethod` 由查詢端 join 回父層 `Order.PaymentMethod` 取得。v0.12 新增，修正 Analytics 端原本呼叫不存在端點導致批次拉取永遠失敗的缺口 | 內部（服務身分 JWT，任一內部服務） |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
@@ -230,3 +235,4 @@ sequenceDiagram
   此機制與 §4.1 的 Saga 補償失敗重試是不同層級：§4.1 處理「補償動作本身失敗」，這裡處理「買家單純沒有在時限內完成付款」，觸發的補償鏈相同，但觸發原因與時機不同（一個是被動偵測付款失敗後立刻補償，一個是主動排程偵測逾時後才觸發補償）
 - [x] ~~訂單編號產生策略需另訂~~——**已解決（正式定案）**：`ORD{日期}{8 碼亂數}` 定案為永久設計（不改成序號式編號）並補上防碰撞重試，理由與細節見 §2.1
 - [x] ~~§4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支~~——**已解決**：兩份文件的循序圖皆已補上第四個 `alt` 分支；已核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 實際行為（`OrderStatus.Failed`、補償順序為優惠券→庫存），文件與程式碼一致，見 [10-gap-analysis.md](10-gap-analysis.md) §14
+- [ ] **沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`**（v0.12 核對程式碼時意外發現，獨立於同輪修正的 Analytics 批次拉取缺口）：§2 列出的 `SubOrder.Status` 列舉值包含 `Completed`，`ecommerce-services` 現有的賣家後台也確實只做到「標記出貨」（`POST /api/v1/vendor/orders/{id}/ship` → `Shipped`），[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「訂單處理（確認、出貨、**標記已完成**）」規格中「標記已完成」這部分從未落地為端點，本文件 §5 API 大綱也只列出 `ship`，沒有對應的 complete 端點。這代表即使 §5 新增的 `GET internal/v1/orders/support/completed` 端點本身正確，實務上目前也永遠查不到任何資料。**待決議**：由誰觸發完成？(a) 賣家在後台主動標記已完成（比照「標記出貨」的既有模式，最小改動）；(b) 買家確認收貨；(c) 出貨後 N 天自動完成（背景排程，比照 §6 逾時未付款自動取消/[13-service-wms.md](13-service-wms.md) 效期排程的既有模式，需另訂天數門檻）；(d) (a)(c) 併存（賣家可提前標記，逾時未標記則自動完成，電商平台常見設計）。四種方案對 SubOrder 狀態機、通知時機、評價開放時機（[24-service-reviews.md](24-service-reviews.md) 的「子訂單完成資格」判斷依賴此狀態）皆有不同影響，需要獨立討論，不是單純的實作缺口
