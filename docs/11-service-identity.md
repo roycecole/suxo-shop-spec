@@ -12,6 +12,7 @@
 | v0.7 | 2026-09-09 | ordinarycas | §5.1 開頭新增「適用範圍澄清」段落，明確 7/8 端點對 Buyer/Seller/SellerStaff 共用、僅 `register` 消費者限定；§6 對應待決議項標記已解決，回應「將待決議事項列出來實作」需求 |
 | v0.8 | 2026-09-10 | ordinarycas | §6 LINE/Google OAuth 串接時程標記為需要業主決策（排程/資源分配問題，非技術決策），回應「將待決議事項列出來實作」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | §6 LINE/Google OAuth 串接時程補上排序建議（必要路徑 Email+密碼已完整可用，非阻擋性缺口，建議排在其他業主決策議題之後），仍未代為排定具體時程，回應「繼續補完 9 項未解決」需求 |
+| v0.10 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 User/ExternalLogin/Address/RefreshToken/AccountActionToken 五個實體與其內部 FK 關係；已交叉核對 `ecommerce-services` 實際 EF Core 程式碼（Domain Entities + Infrastructure Configurations），§2 既有文字內容與程式碼一致，未發現需訂正之處 |
 
 ## 1. 職責
 
@@ -27,6 +28,69 @@
 | RefreshToken | Id、UserId、TokenHash（僅存雜湊，比照密碼雜湊原則不存明文）、ExpiresAt、RevokedAt（nullable）、CreatedAt，見 §5.1 |
 | AccountActionToken | Id、UserId、Purpose（`EmailVerification`/`PasswordReset`）、TokenHash、ExpiresAt、UsedAt（nullable）、`PendingPasswordHash`（nullable，僅訪客升級為會員時使用，見 §5.1）、CreatedAt |
 | PlatformSupportStaff 帳號 | Role = `PlatformSupportStaff`，見 §4 |
+
+### 2.1 ER 圖
+
+以下實體均屬本服務自己的 PostgreSQL schema，關聯線只畫本服務內部真實存在的外鍵（FK）；跨服務參照一律是不受資料庫約束的裸 GUID，見各實體自己的欄位說明。
+
+```mermaid
+erDiagram
+    User ||--o{ ExternalLogin : "綁定"
+    User ||--o{ Address : "擁有"
+    User ||--o{ RefreshToken : "簽發"
+    User ||--o{ AccountActionToken : "簽發"
+
+    User {
+        uuid Id PK
+        string Email UK "nullable，帳號刪除後清空"
+        string PasswordHash "nullable，訪客/待升級帳號無密碼"
+        datetime EmailVerifiedAt "nullable"
+        enum Role
+        enum Status
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    ExternalLogin {
+        uuid Id PK
+        uuid UserId FK
+        enum Provider
+        string ProviderUserId
+        datetime CreatedAt
+    }
+    Address {
+        uuid Id PK
+        uuid UserId FK
+        enum Type
+        string RecipientName
+        string PhoneNumber
+        string PostalCode
+        string City
+        string District
+        string AddressLine
+        string ColdChainNote "nullable，低溫宅配備註"
+        bool IsDefault
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    RefreshToken {
+        uuid Id PK
+        uuid UserId FK
+        string TokenHash
+        datetime ExpiresAt
+        datetime RevokedAt "nullable"
+        datetime CreatedAt
+    }
+    AccountActionToken {
+        uuid Id PK
+        uuid UserId FK
+        enum Purpose
+        string TokenHash
+        datetime ExpiresAt
+        datetime UsedAt "nullable"
+        string PendingPasswordHash "nullable，僅訪客升級為會員時使用"
+        datetime CreatedAt
+    }
+```
 
 ## 3. 爸芭樂案例
 
