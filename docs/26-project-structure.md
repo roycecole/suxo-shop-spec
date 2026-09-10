@@ -11,6 +11,7 @@
 | v0.6 | 2026-09-09 | ordinarycas | repo 更名 `ecommerce-deploy`→`ecommerce-launch`，呼應實際 checkout 的資料夾命名；§2.2 `shyecms-admin/features/` 補上 `staff/` 模組並確認先前的猜測樹狀圖、§7 標記 ShyeCMS 前端需求規格待決議項已解決——皆同步新增的 [31-shyecms-frontend-requirements.md](31-shyecms-frontend-requirements.md) |
 | v0.7 | 2026-09-09 | ordinarycas | §7 標記 `services/*/Dockerfile` 待決議項已解決：`ecommerce-services` 已統一撰寫同構的 multi-stage Dockerfile 並通過全服務 docker compose 啟動實測，回應「將待決議事項列出來實作」需求 |
 | v0.8 | 2026-09-10 | ordinarycas | §7 解決 3 項待決議：私有套件選型定案 GitHub Packages、跨 repo CI/CD SOP 與 `ecommerce-launch` 版本標籤更新流程定案（各 repo 版本 tag 觸發建置推送映像檔，`ecommerce-launch` 現階段人工更新不自動化），回應「將待決議事項列出來實作」需求 |
+| v0.9 | 2026-09-11 | ordinarycas | §4.2 補充：共用函式庫 NuGet 發布基礎建設已在 `ecommerce-services` 落地（4 個 `.csproj` 補齊套件中繼資料、獨立版本 tag 觸發的 `publish-shared-packages.yml`、消費端 `NuGet.config.example`、遷移 runbook `docs/shared-package-migration.md`），但服務端 `ProjectReference`→`PackageReference` 的實際遷移尚未執行——§7 新增對應待決議事項，精確區分「發布基礎建設完成」與「遷移完成」兩件事，避免被誤讀成 §4.2 已全部落地 |
 
 > 本文件回答「總共會有哪些 repo、各自資料夾長什麼樣子」。
 
@@ -199,6 +200,15 @@ services:
 
 **為什麼改**：直接對應 §6 的疑慮——`ProjectReference` 代表任何一個共用函式庫的變更，理論上會立刻影響「同一次建置」內的所有服務，模糊了「服務可以獨立升級」的邊界。改成版本化套件後，服務 A 想升級到 `SuxoShop.Shared.Markdown 2.0.0`、服務 B 還停留在 `1.3.0`，兩者互不影響，各自的升級時程由各自決定，這才是微服務精神真正該有的樣子。
 
+**2026-09-11 更新：發布基礎建設已落地，服務端遷移仍待執行（兩者是不同的兩件事）**——`ecommerce-services` 這一側已完成：
+
+- 4 個 `shared/SuxoShop.Shared.*` 的 `.csproj` 皆已補齊 NuGet 套件中繼資料（`PackageId`/`Version`/`Authors`/`Company`/`Description`/`RepositoryUrl`/`PackageReadmeFile`/`PackageTags`）。`PackageLicenseExpression` 刻意留白——目前這 6 個 repo 沒有任何 `LICENSE` 檔案或授權條款慣例可循，不應由自動化流程代為選一個 SPDX 授權字串，已記錄為待決議事項（見下方 §7）。
+- 新增 `.github/workflows/publish-shared-packages.yml`：4 個函式庫各自用獨立的 `shared-<library>-v<semver>` git tag 觸發發布（如 `shared-security-v1.0.0`），不共用同一個版號，對應本節「各自」發布的設計意圖；已通過 `actionlint` 驗證。取代了先前 `release.yml` 內一個把 3 個函式庫綁在同一個 repo 級距 `v*.*.*` tag 上統一定版號的 job——那種做法等於讓「各自獨立版本」名存實亡。
+- 新增 `NuGet.config.example`（消費端如何設定 GitHub Packages 來源/認證的範本）與 `docs/shared-package-migration.md`（完整遷移 runbook，涵蓋確認 GitHub Packages 可用、推 tag 觸發首次發布、驗證套件出現在 GitHub Packages UI、設定消費端、逐服務執行 `scripts/migrate-to-package-references.sh` 並各自驗證 build/test 全綠）。
+- 4 個函式庫已各自本機 `dotnet pack --configuration Release` 驗證成功產出 `.nupkg`（含 README 正確打包），**未**執行過 `dotnet nuget push`，**未**推送過任何 `shared-*-v*` tag。
+
+**但截至本次更新，以下事項仍未執行**：GitHub Packages 上還沒有這 4 個套件的任何一個版本；15 個服務的 `.csproj` **仍然 100% 是 `ProjectReference`**，一行都還沒有改成 `PackageReference`。也就是說，本節開頭「服務可以獨立升級」的目標，實際上**尚未成立**——那要等 `docs/shared-package-migration.md` 的遷移步驟被使用者真正執行、至少有一個服務切換成 `PackageReference` 之後才第一次成立。「發布管線做好了」跟「服務真的在用版本化套件」是兩件事，不要混為一談。
+
 ### 4.3 `api-client`：改為獨立 npm 套件，不是 monorepo 內的 `packages/` 資料夾
 
 因為 `ecommerce-storefront` 與 `ecommerce-admin` 現在是兩個獨立 repo，不可能再共用同一個檔案系統路徑下的 `packages/api-client`。改為**獨立發布到私有 npm registry 的套件**（如 `@suxoshop/api-client`），內容由 [09-api-specification.md](09-api-specification.md) 各服務 OpenAPI 規格產生型別，兩個前端各自在 `package.json` 宣告版本並安裝，跟 4.2 的 NuGet 套件是同一個道理。
@@ -238,3 +248,5 @@ services:
   1. **各 repo 自己的 CI**：`shyecms-api`/`shyecms-admin`/`ecommerce-services`/`ecommerce-storefront`/`ecommerce-admin`（5 個有原始碼的 repo）各自用 GitHub Actions：push 到 `main` 時跑 build + test；推送符合語意化版本的 git tag（如 `v1.2.0`）時，額外建置 Docker image 並推送到上方定案的 GitHub Packages（Container Registry），標籤對應該 git tag。
   2. **`ecommerce-launch`（含各客戶的 `ecommerce-launch-<客戶代稱>`）版本標籤更新：現階段人工，不做自動化 PR bot**。理由：自動化需要一支有權限對所有部署 repo 開 PR 的服務帳號/GitHub App，還要設計「什麼時候該幫哪個客戶升級」的規則（不是每個客戶都要立刻用最新版——正式環境的穩定性通常比追新版更重要），這套自動化本身的複雜度和目前只有少數客戶部署的規模不成比例。維運人員決定要幫某客戶升級某服務時，手動修改該客戶 `ecommerce-launch-<客戶代稱>` 的 `.env` 或 compose 檔裡的 image tag、commit、部署——這個手動步驟本身就是一個天然的「人工確認要不要升級」關卡，比自動化更適合現階段的低頻率/高謹慎需求。待客戶數成長到人工更新變成真正的瓶頸時，再重新評估自動化。
 - [x] ~~`services/*/Dockerfile` 的實際內容（multi-stage build、基礎映像檔版本）尚未撰寫~~——**已解決**：`ecommerce-services` 的 15 個服務已統一撰寫同構的 multi-stage Dockerfile（build stage `mcr.microsoft.com/dotnet/sdk:10.0`、runtime stage `mcr.microsoft.com/dotnet/aspnet:10.0`，僅服務名/埠號不同），build context 一律 repo 根目錄（因 `shared/` 以 ProjectReference 引用，見 §4.2），已全部通過 `docker build` 與 `docker compose up` 全服務啟動實測（`/health/live`+`/health/ready` 全數 200）
+- [ ] **共用函式庫 NuGet 套件的實際遷移尚未執行**（區別於「發布基礎建設」，見 §4.2 2026-09-11 更新）：`ecommerce-services` 已備妥 4 個函式庫的套件中繼資料、獨立版本 tag（`shared-<library>-v<semver>`）觸發的 `publish-shared-packages.yml`、消費端 `NuGet.config.example`、遷移 runbook（`ecommerce-services/docs/shared-package-migration.md`），且已本機驗證 `dotnet pack` 可成功產出 `.nupkg`。但（1）尚未推送任何 `shared-*-v*` tag，GitHub Packages 上還沒有這 4 個套件的任何實際版本；（2）15 個服務的 `ProjectReference` 一行都還沒有改成 `PackageReference`——§4.2「服務可以獨立升級」的目標因此仍未成立。需要使用者依上述 runbook 逐步執行（推 tag → 確認套件出現在 GitHub Packages UI → 逐服務執行遷移腳本並各自驗證 build/test 全綠，一次一個服務）。
+- [ ] **共用函式庫 NuGet 套件的授權條款（License）尚未決定**：這 6 個 repo（含 `suxo-shop-spec` 全部規格文件）目前沒有任何 `LICENSE` 檔案或授權條款相關約定，4 個 `SuxoShop.Shared.*` 的 `.csproj` 因此刻意未設定 `PackageLicenseExpression`——這是拾夜科技對客戶白牌部署使用的內部共用函式庫，選錯 SPDX 授權字串可能有實際商業/法律後果，需要使用者／拾夜科技內部決定後才能補上，不應由自動化流程代為選擇。
