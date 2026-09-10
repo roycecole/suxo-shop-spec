@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-08 | ordinarycas | §4 新增賣家後台讀取目前草稿內容的 `GET` 端點——先前只有公開的「取得已發佈版型」，賣家編輯器無法載入尚未發佈的變更內容（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.5 | 2026-09-09 | ordinarycas | §5 標記 `StoreSettings` 歸屬待決議項已解決：定案歸屬 Vendor Service，回應「將待決議事項列出來實作」需求 |
 | v0.6 | 2026-09-10 | ordinarycas | §5 Page Builder 實作方式待決議項已解決：定案簡化版（既有 PageSection.Type 固定列舉設計即為答案），回應「將待決議事項列出來實作」需求 |
+| v0.7 | 2026-09-10 | ordinarycas | §2 新增 2.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上 PageLayout 的 `(PageType, Status)` 唯一索引說明——每個 PageType 各有一列草稿＋一列已發佈，先前表格未提及這個「草稿/已發佈分列儲存」設計；確認 `PageLayout`—`PageSection` 為資料庫層級強制外鍵（級聯刪除），`Translation.EntityId` 為既有多型設計、未建 FK |
 
 ## 1. 職責
 
@@ -18,13 +19,51 @@
 
 | 實體 | 說明 |
 |---|---|
-| PageLayout | PageType（Home/AboutUs/Custom）、IsDefault、Status（Draft/Published） |
+| PageLayout | PageType（Home/AboutUs/Custom）、IsDefault、Status（Draft/Published）——`(PageType, Status)` 唯一，每個 PageType 各有一列草稿＋一列已發佈（兩筆各自獨立的資料列），供 §4 的公開／賣家草稿兩個讀取端點同時存在、互不影響 |
 | PageSection | Type（Banner/FeaturedCategories/ProductBlock/VendorSpotlight/RichText/Custom）、Config（jsonb）、SortOrder、IsVisible |
 | Translation | EntityType（"PageSection"）、EntityId、LocaleCode、FieldName（`Config` 內需要翻譯的子欄位路徑，如 Banner 文案、RichText 內容）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
 
 > `Type = RichText` 的區塊，`Config` 內的內容欄位以 **Markdown** 格式儲存（賣家後台用 Markdown 編輯器輸入），前台渲染時轉成 HTML 顯示（沿用 [29-shared-service-conventions.md](29-shared-service-conventions.md) §2 的共用 Markdown 處理管線，不自行實作）。
 >
 > `Config` 是半結構化 jsonb，並非每個子欄位都需要翻譯——只有文字內容（Banner 文案、RichText 本文）透過 `Translation` 查詢，結構性欄位（圖片 URL、排序數字、顯示分類 Id）不分語言、所有語言共用同一份。
+
+### 2.1 ERD
+
+```mermaid
+erDiagram
+    PageLayout ||--o{ PageSection : "版型內的區塊"
+
+    PageLayout {
+        uuid Id PK
+        PageType PageType "unique together with Status"
+        bool IsDefault
+        PageLayoutStatus Status "unique together with PageType; Draft row + Published row per PageType"
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    PageSection {
+        uuid Id PK
+        uuid PageLayoutId FK
+        PageSectionType Type "Banner/FeaturedCategories/ProductBlock/VendorSpotlight/RichText/Custom, fixed enum"
+        jsonb Config "shape depends on Type; RichText stores Markdown"
+        int SortOrder
+        bool IsVisible
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    Translation {
+        uuid Id PK
+        string EntityType "currently only PageSection"
+        uuid EntityId "polymorphic ref by EntityType, no FK"
+        string LocaleCode
+        string FieldName "sub-field path within Config, e.g. banner.caption"
+        string Value
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+```
+
+> `PageLayout`—`PageSection`（`PageLayoutConfiguration.HasMany(x => x.Sections).WithOne(x => x.PageLayout).HasForeignKey(x => x.PageLayoutId).OnDelete(Cascade)`）是本服務唯一的資料庫層級外鍵。`Translation.EntityId` 未對任何實體建立 `HasForeignKey`（`TranslationConfiguration` 只建 `(EntityType, EntityId, LocaleCode, FieldName)` 唯一索引），是 [28-i18n.md](28-i18n.md) §3 共用多語系表模式既有的多型設計（`EntityType` 決定 `EntityId` 指向哪個實體，目前只有 `"PageSection"` 一種），本圖故不畫關聯線。`PageSectionType` 的固定列舉值即為 §5 已定案的「簡化版 Page Builder」設計本身（不是自建拖拉式編輯器，見該節）。
 
 ## 3. 爸芭樂案例
 
