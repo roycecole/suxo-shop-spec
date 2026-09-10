@@ -12,6 +12,7 @@
 | v0.7 | 2026-09-10 | ordinarycas | §2 新增 CouponUsageLog 實體、§5 新增對應的 PlatformSupportStaff 診斷端點——回應 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6「診斷端點逐服務盤點」發現本服務原本遺漏這塊 |
 | v0.8 | 2026-09-10 | ordinarycas | §2 新增 2.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Coupon.UsedCount`/`IsActive`、`CouponUsageLog.BuyerId`；確認 `Coupon` 與 `CouponUsageLog`/`Translation` 之間目前皆未在 EF 設定檔建立資料庫層級外鍵（僅建索引），ERD 依此如實不畫關聯線 |
 | v0.9 | 2026-09-10 | ordinarycas | 新增 §4.1「優惠券適用範圍檢查」——本服務原本完全沒有文件描述 `ScopeType`/`ScopeTargetIds` 這組欄位實際怎麼判斷「是否在範圍內」，稽核 [17-service-order.md](17-service-order.md) 資安修正時一併核對程式碼補上。同時記錄該輪稽核發現的一個相關缺口：本服務端的範圍檢查邏輯（含 `SpecificCategories`）本身沒有問題、已有獨立測試涵蓋兩個方向，缺口其實在 Order Service 那一側——結帳 Saga 過去從未查過商品分類，永遠傳空 `categoryIds` 過來，導致任何 `SpecificCategories` 範圍的優惠券無論購物車內容為何都會判定 `scope_not_met`；本服務的 `/internal/v1/promotions/validate` 契約其實早就有 `CategoryIds` 這個可選欄位，缺口不在本服務，已於 [17-service-order.md](17-service-order.md) v0.13 §4 步驟 1.5 修正，本文件不需要修改程式碼 |
+| v0.10 | 2026-09-10 | ordinarycas | 配合 [17-service-order.md](17-service-order.md) v0.14 結帳冪等性修正：§2/§2.1 `CouponUsageLog` 新增 `(CouponId, OrderId, Action)` 唯一約束；§4 補充使用次數的原子遞增現在對同一個 OrderId 是安全可重複呼叫的行為說明，同時修正 `RevertAsync`（Saga 補償還原）先前並非真正冪等的既有缺口。完整設計理由見 [17-service-order.md](17-service-order.md) §4.2 |
 
 ## 1. 職責
 
@@ -22,7 +23,7 @@
 | 實體 | 說明 |
 |---|---|
 | Coupon | VendorId（優惠券歸屬某個賣家）、Code（**VendorId + Code 唯一**，見 §6）、DiscountType（FixedAmount/Percentage）、Amount、MinimumSpend、UsageLimit/UsageLimitPerUser、UsedCount（目前已使用次數，§4 原子遞增的對象）、StartAt/ExpiryAt、適用範圍（ScopeType + ScopeTargetIds，分類/商品限定）、IsActive（停用旗標，見 §5 DELETE 端點，採軟刪除） |
-| CouponUsageLog | 優惠券使用/還原歷程（`CouponId`、`OrderId`、`Action`：`Used`/`Reverted`、`BuyerId`：使用者 ID，訪客結帳為 null、供 `UsageLimitPerUser` 每人上限查詢、`CreatedAt`），供 `PlatformSupportStaff` 排查併發或補償異常——比照 [13-service-wms.md](13-service-wms.md) §2 `StockLedger` 的既有模式，本服務先前遺漏這張表，只靠 `Coupon.UsedCount` 這個計數器沒有歷史軌跡可查 |
+| CouponUsageLog | 優惠券使用/還原歷程（`CouponId`、`OrderId`、`Action`：`Used`/`Reverted`、`BuyerId`：使用者 ID，訪客結帳為 null、供 `UsageLimitPerUser` 每人上限查詢、`CreatedAt`），供 `PlatformSupportStaff` 排查併發或補償異常——比照 [13-service-wms.md](13-service-wms.md) §2 `StockLedger` 的既有模式，本服務先前遺漏這張表，只靠 `Coupon.UsedCount` 這個計數器沒有歷史軌跡可查；`(CouponId, OrderId, Action)` 唯一約束（新增於 v0.10）防止同一個 OrderId 的使用/還原被重複套用，見 [17-service-order.md](17-service-order.md) §4.2 |
 | Translation | EntityType（"Coupon"）、EntityId、LocaleCode、FieldName（如優惠券顯示文案）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
 
 ### 2.1 ERD
@@ -50,7 +51,7 @@ erDiagram
     CouponUsageLog {
         uuid Id PK
         uuid CouponId "references Coupon.Id, indexed only, no FK constraint"
-        uuid OrderId "cross-service ref, Order Service, no FK"
+        uuid OrderId "cross-service ref, Order Service, no FK; unique with CouponId+Action, added v0.10"
         CouponUsageAction Action
         uuid BuyerId "nullable, cross-service ref, Identity Service, no FK"
         datetimeoffset CreatedAt
@@ -80,6 +81,8 @@ UPDATE Coupons SET UsedCount = UsedCount + 1 WHERE Id = @CouponId AND UsedCount 
 ```
 
 影響列數為 0 即代表已達使用上限，`/internal/v1/promotions/validate` 應回傳結帳失敗（優惠券已達使用上限），觸發 Saga 走「優惠券失敗」分支（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7）。`UsageLimitPerUser` 的每人限制需額外查詢該使用者的歷史使用次數，屬於原子更新之外的追加檢查，仍應在同一個資料庫交易內完成，避免 TOCTOU 競態。
+
+**冪等性（v0.10 新增，見 [17-service-order.md](17-service-order.md) §4.2）**：`/internal/v1/promotions/validate` 對同一個 OrderId 現在是安全可重複呼叫的——呼叫前先查該 (CouponId, OrderId) 是否已有 `Used` 歷程列，有則直接回報成功（折扣金額以目前券設定重算，不重複遞增 `UsedCount`）；沒有才進入上述原子遞增流程，寫入時若與另一個真正同時送達、帶著同一個 OrderId 的請求競爭 `(CouponId, OrderId, Action)` 唯一約束，輸的一方回滾自己造成的遞增、回報清楚的失敗（`reason=duplicate_usage`），不假裝成功——理由與取捨比照 [13-service-wms.md](13-service-wms.md) §4 的同款修正。`/internal/v1/promotions/{code}/revert`（Saga 補償）同步修正：先前並非真正冪等（同一張券若還有其他訂單的合法使用量，重複呼叫 `Revert` 同一個 OrderId 會把別張訂單的合法用量也跟著多扣一次），現在同樣先查該 (CouponId, OrderId) 是否已有 `Reverted` 歷程列，有則直接回報「已還原」，不重複遞減。
 
 ### 4.1 優惠券適用範圍檢查（v0.9 新增，補齊原本完全沒有文件描述的既有邏輯）
 

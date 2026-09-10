@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-09 | ordinarycas | §5 訪客購物車自動清理排程待決議項已解決：定案 30 天未更新視為過期、每日背景排程清理，回應「將待決議事項列出來實作」需求 |
 | v0.3 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Cart/CartItem 兩個實體（一對多）；已交叉核對 `ecommerce-services` 實際 EF Core 程式碼，§2 既有文字內容與程式碼一致，未發現需訂正之處 |
+| v0.4 | 2026-09-10 | ordinarycas | 配合 [17-service-order.md](17-service-order.md) v0.14 結帳冪等性修正：§2 新增 `Cart.CheckedOutOrderId`/`CheckedOutAt`（購物車一旦被結帳 Saga 消費即永久標記，防止同一張購物車被重複結帳）；§4 新增內部端點 `POST /internal/v1/cart/{cartId}/checkout-claim`（Order Service 用來原子性標記購物車的入口）。完整設計理由與取捨見 [17-service-order.md](17-service-order.md) §4.2 |
 
 ## 1. 職責
 
@@ -15,7 +16,7 @@
 
 | 實體 | 說明 |
 |---|---|
-| Cart | 會員為 UserId，訪客為 Cookie/SessionId |
+| Cart | 會員為 UserId，訪客為 Cookie/SessionId；CheckedOutOrderId/CheckedOutAt（新增於 v0.4，購物車被結帳 Saga 消費後產生的訂單 Id 與時間戳，一旦寫入即永久生效，本服務不提供解除標記的操作——見 [17-service-order.md](17-service-order.md) §4.2 的完整設計理由與已知取捨） |
 | CartItem | ProductId/VariationId、Quantity |
 
 ### 2.1 ER 圖
@@ -30,6 +31,8 @@ erDiagram
         uuid Id PK
         uuid UserId "nullable，會員身分；跨服務參照 Identity Service User，無 FK"
         string GuestToken "nullable，訪客身分（Cookie/Session Id）"
+        uuid CheckedOutOrderId "nullable，added v0.4，see 17 4.2"
+        datetime CheckedOutAt "nullable，added v0.4"
         datetime CreatedAtUtc
         datetime UpdatedAtUtc
     }
@@ -57,6 +60,7 @@ erDiagram
 | `PUT /api/v1/cart/items/{id}` | 修改數量 | 公開（含訪客） |
 | `DELETE /api/v1/cart/items/{id}` | 移除商品 | 公開（含訪客） |
 | `GET /internal/v1/cart/{cartId}` | 結帳 Saga 內部呼叫：取得購物車內容 | 內部（僅 Order Service） |
+| `POST /internal/v1/cart/{cartId}/checkout-claim` | 結帳 Saga 內部呼叫（v0.4 新增）：以原子條件更新（`WHERE CheckedOutOrderId IS NULL`）把購物車標記為已結帳。恆回 200，body 的 `claimed` 欄位（true=本次呼叫首次標記成功／false=先前已標記過）由呼叫端判斷後續動作——不用 HTTP 狀態碼區分兩種情況，避免呼叫端誤把「已標記過」當成錯誤處理。完整設計理由見 [17-service-order.md](17-service-order.md) §4.2 | 內部（僅 Order Service） |
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 

@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-10 | ordinarycas | §6 解決 3 項待決議：多倉現階段明確排除、效期商品新增每日自動處理排程、Catalog 呼叫失敗降級行為釐清為架構前提不成立（storefront 實際直接呼叫本服務，已有四態 UI），回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Inventory/StockBatch/StockReservation/StockLedger 四個實體；交叉核對 `ecommerce-services` 實際程式碼後發現 §2 表格文字未反映 v0.4 效期排程已解決項新增的 `StockBatch.IsNearExpiry`/`RemainingQuantity` 欄位與 `StockLedgerEntryType.Expired` 異動種類，已補上。四個實體彼此之間確認**沒有**資料庫層級外鍵關係（僅透過 `ProductId`/`VariationId` 慣例對應，且該欄位是對 Catalog Service 的跨服務參照），ER 圖因此不畫任何關聯線 |
 | v0.6 | 2026-09-10 | ordinarycas | §5 新增 `POST /internal/v1/wms/inventory/batch` 批次庫存查詢端點，`ecommerce-services` 本輪修正 Catalog WooCommerce 匯出工作的 N+1 內部呼叫問題（見 [12-service-catalog.md](12-service-catalog.md) §5），取代原本規劃逐商品呼叫既有單筆端點的寫法 |
+| v0.7 | 2026-09-10 | ordinarycas | 配合 [17-service-order.md](17-service-order.md) v0.14 結帳冪等性修正：§2/§2.1 新增 `StockReservation.VariationKey`（`VariationId` 正規化後的去重鍵，避免 PostgreSQL 唯一索引的 NULL 互不相等陷阱）與 `(OrderId, ProductId, VariationKey)` 唯一約束——重複的結帳 Saga 執行（同一個 OrderId）現在在資料庫層直接擋下，不再無條件重複扣庫存；§4 補充原子扣庫存端點現在對同一個 OrderId 是安全可重複呼叫的行為說明。完整設計理由見 [17-service-order.md](17-service-order.md) §4.2 |
 
 ## 1. 職責
 
@@ -20,7 +21,7 @@
 |---|---|
 | Inventory | ProductId/VariationId、StockQuantity、`BackorderPolicy`（enum：`NotAllowed`/`Allowed`/`AllowedWithNotify`，供 WooCommerce 匯出的 `Backorders allowed?` 欄位使用；與 `StockStatus` 的當下狀態快照語意不同，不能借用） |
 | StockBatch | 入庫批次，含 BatchNo、有效期（ExpiryDate）、入庫數量（Quantity）與剩餘數量（RemainingQuantity，生鮮商品先進先出用）、`IsNearExpiry`（效期 3 天內到期旗標，供前台/後台顯示「即期品」徽章，見 §6 效期排程已解決項） |
-| StockReservation | 結帳 Saga 建立的庫存預留紀錄，含 `Released` 旗標避免重複釋放 |
+| StockReservation | 結帳 Saga 建立的庫存預留紀錄，含 `Released` 旗標避免重複釋放；`VariationKey`（新增於 v0.7，`VariationId ?? 空 GUID` 正規化值，不對外曝露）與 `(OrderId, ProductId, VariationKey)` 唯一約束，防止同一個 OrderId 被重複扣庫存（見 [17-service-order.md](17-service-order.md) §4.2） |
 | StockLedger | 庫存異動歷程（`EntryType`：入庫/出庫/預留/釋放/**效期已過**），供 `PlatformSupportStaff` 排查異常 |
 
 ### 2.1 ER 圖
@@ -54,6 +55,7 @@ erDiagram
         uuid Id PK
         uuid ProductId "跨服務參照 Catalog Service Product，無 FK"
         uuid VariationId "nullable，跨服務參照 Catalog Service ProductVariation，無 FK"
+        uuid VariationKey "= VariationId 正規化值，added v0.7, unique with OrderId+ProductId, see 17 4.2"
         uuid OrderId "跨服務參照 Order Service，無 FK"
         int Quantity
         bool Released
@@ -79,6 +81,8 @@ erDiagram
 ## 4. 庫存扣減機制
 
 採**原子條件更新**（`UPDATE ... WHERE StockQuantity >= N`），由資料庫對該列加鎖，影響列數為 0 即代表庫存不足，避免併發買超。
+
+**冪等性（v0.7 新增，見 [17-service-order.md](17-service-order.md) §4.2）**：`POST /internal/v1/wms/reservations` 對同一個 OrderId 現在是安全可重複呼叫的——呼叫前先查該 OrderId 是否已有目前有效（未釋放）的預留，有則直接回報成功、不重複扣庫存；沒有才進入上述原子條件更新流程，寫入時若與另一個真正同時送達、帶著同一個 OrderId 的請求競爭 `(OrderId, ProductId, VariationKey)` 唯一約束，輸的一方回滾自己造成的扣庫存、回報清楚的失敗（`reason=duplicate_reservation`），**不會**假裝成功——因為本服務的補償（`.../release`）以 OrderId 為單位整批釋放，若輸家誤以為自己也成功預留而繼續往下跑，之後很可能在 Order Service 建單失敗、觸發補償釋放到贏家真正持有的那筆預留。這個機制信任呼叫端（Order Service）保證「一個 OrderId 只會有一個合法擁有者」（見 §4.2 的購物車原子標記），不支援「同一個 OrderId 先前已被釋放、現在要重新申請」的情境——這種情況在正常結帳流程下不會發生，見 §4.2「已知取捨」段落。
 
 ## 5. API 大綱
 

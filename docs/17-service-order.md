@@ -16,6 +16,7 @@
 | v0.11 | 2026-09-10 | ordinarycas | §2 新增 2.2 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Order.GuestEmail`/`PaymentMethod`/`WmsReservationId`/`CouponCode`/`CouponVendorId`（皆為骨架階段依自動取消/補償鏈需求新增、規格表格原未列出）、`SubOrder.VendorId`/`CommissionRate`/`ShippedAt`、`OrderItem.ProductId`；確認 `Order → SubOrder → OrderItem` 為資料庫層級強制外鍵（級聯刪除），`SagaCompensationFailure.OrderId` 未建 FK（僅索引），ERD 依此如實不畫該關聯線 |
 | v0.12 | 2026-09-10 | ordinarycas | 修正 Analytics Service 批次拉取已完成子訂單的核心缺口（稽核發現：`ecommerce-services` 的 `HttpOrderDataSource` 呼叫的端點原本不存在，每小時批次拉取永遠 404，見 [22-service-analytics.md](22-service-analytics.md) 同步更新）：§2 新增 `SubOrder.CompletedAt` 欄位並同步更新 §2.2 ERD；§5 新增 `GET internal/v1/orders/support/completed` 內部端點；§6 新增一項待決議——目前沒有任何程式碼路徑會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」，[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「標記已完成」規格尚未落地），這是核對程式碼時意外發現的獨立缺口，不在本輪修復範圍內 |
 | v0.13 | 2026-09-10 | ordinarycas | **資安修正（money-critical）**：稽核發現結帳 Saga 原本在步驟 3 直接執行 `request.Items.Sum(i => i.Price * i.Quantity)`——`Price` 是買家結帳請求本文帶入的單價快照，Cart Service 不儲存價格、Order 也從未呼叫 Catalog 查真實現價，任何人都能竄改該欄位送出任意單價，直接決定 GrandTotal、Payment 導轉付款金額與 WMS 扣庫存依據的小計。§4 新增步驟 1.5：呼叫 [12-service-catalog.md](12-service-catalog.md) v0.8 新增的 `POST /internal/v1/catalog/products/batch` 取得每個 ProductId 當下的權威售價與所屬分類 ID；買家送來的 Price 只用於比對是否與權威售價一致（不相符即整筆拒絕，409 Problem Details，`step=Catalog`/`reason=price_mismatch`，提示買家重新整理購物車），不再是金額計算來源。同時修正一個相關但獨立的缺口：優惠券分類範圍檢查（`ScopeType.SpecificCategories`）先前因為 Order 從未查過商品分類、永遠傳空 categoryIds 給 Promotions，導致這類優惠券無論購物車內容為何必然判定 `scope_not_met`（Promotions 端的檢查邏輯本身沒問題，缺口完全在 Order 這一側沒把資料準備好，見 [16-service-promotions.md](16-service-promotions.md) v0.9 §4.1）；步驟編號沿用既有慣例以「1.5」插入、不整段重編，避免連帶修改 13/14/16/18/23 等文件既有的步驟數字引用 |
+| v0.14 | 2026-09-10 | ordinarycas | **正確性修正（inventory/payment-critical）**：稽核發現 `POST /api/v1/orders/checkout` 完全沒有冪等保護——`OrderId` 每次呼叫都重新隨機產生、Cart 從未被標記為已結帳、WMS/Promotions 皆不以 OrderId 去重，買家端逾時重試或雙重點擊會各自獨立成功、建立兩筆訂單、庫存與優惠券使用次數各被多算一次，COD 訂單的重複扣庫存更是永久性的（§6 逾時未付款自動取消排除 COD，不會自我修復）。新增 §4.2「結帳冪等性與重複請求防護」：OrderId 改由 CartId 決定性推導＋Order orchestration 層級的冪等短路（新增步驟 0.5／1.6）＋WMS/Promotions 資料庫唯一約束三層防護；§2/§2.2 新增 `Order.CartId`（唯一索引）與付款導轉表單快照三欄位（`PaymentId`/`PaymentFormAction`/`PaymentFieldsJson`，供冪等重放使用，不必重新呼叫 Payment）；§4 循序圖與步驟清單同步更新。[13-service-wms.md](13-service-wms.md)、[16-service-promotions.md](16-service-promotions.md)、[15-service-cart.md](15-service-cart.md) 同步更新（新增各自的唯一約束／購物車已結帳標記機制） |
 
 ## 1. 職責
 
@@ -25,7 +26,7 @@
 
 | 實體 | 說明 |
 |---|---|
-| Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
+| Order | CartId（發起本次結帳的購物車，**唯一索引**，新增於 v0.14 結帳冪等性修正——`Order.Id` 本身也由此欄位決定性推導，見 §4.2）、OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、PaymentId/PaymentFormAction/PaymentFieldsJson（步驟 6 付款導轉表單的完整快照，新增於 v0.14——供冪等重放直接組出與第一次結帳一模一樣的回應，不必重新呼叫 Payment Service，見 §4.2；COD 訂單或尚未走到步驟 6 即失敗的訂單三者皆為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
 | SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable）、CompletedAt（進入 Completed 狀態的時間戳記，nullable，新增於 v0.12——供 Analytics Service §5 `GET internal/v1/orders/support/completed` 當增量拉取游標，刻意獨立於 UpdatedAt，理由見下方 2.2 ERD 備註） |
 | OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price（下單當下的**伺服器權威單價**，v0.13 起由 §4 步驟 1.5 向 Catalog Service 查得，買家請求裡的單價僅供比對用，不是這裡落地的資料來源）、Quantity |
 
@@ -51,7 +52,8 @@ erDiagram
     SubOrder ||--o{ OrderItem : "商品項目"
 
     Order {
-        uuid Id PK
+        uuid Id PK "deterministically derived from CartId, see 4.2"
+        uuid CartId "unique, added v0.14, see 4.2"
         string OrderNumber "unique, ORD+yyyyMMdd(UTC)+8hex, see 2.1"
         uuid BuyerId "nullable, cross-service ref, Identity Service, no FK"
         string GuestEmail "nullable, guest lookup only"
@@ -61,6 +63,9 @@ erDiagram
         uuid WmsReservationId "cross-service ref, WMS Service, no FK"
         string CouponCode "nullable, snapshot for compensation revert"
         uuid CouponVendorId "nullable, cross-service ref, Vendor Service, no FK"
+        uuid PaymentId "nullable, step-6 response snapshot, added v0.14, see 4.2"
+        string PaymentFormAction "nullable, step-6 response snapshot, added v0.14"
+        string PaymentFieldsJson "nullable, JSON-serialized step-6 response snapshot, added v0.14"
         decimal Subtotal
         decimal ShippingFee
         decimal TaxTotal
@@ -116,7 +121,7 @@ erDiagram
 
 ## 4. 結帳 Saga（本平台唯一的跨服務交易協調流程）
 
-爸芭樂買家結帳需跨 Cart、Catalog、WMS、Promotions、Order、Payment、Notification 七個服務（**Catalog 為 v0.13 資安修正新增**，見下方步驟 1.5 與變更紀錄），由 Order Service 擔任 Saga 協調者：
+爸芭樂買家結帳需跨 Cart、Catalog、WMS、Promotions、Order、Payment、Notification 七個服務（**Catalog 為 v0.13 資安修正新增**，見下方步驟 1.5 與變更紀錄），由 Order Service 擔任 Saga 協調者。**v0.14 起結帳請求本身具備冪等性**（步驟 0.5／1.6，見 §4.2）——以下先看步驟清單，冪等性機制的完整設計理由見 §4.2，這裡的循序圖已將其畫入：
 
 ```mermaid
 sequenceDiagram
@@ -131,46 +136,62 @@ sequenceDiagram
     participant Noti as Notification Service
 
     Buyer->>Order: POST /api/v1/orders/checkout
-    Order->>Cart: 取得購物車內容
-    Cart-->>Order: 商品/數量清單
-    Order->>Catalog: 批次查詢商品目前真實售價與所屬分類
-    Catalog-->>Order: 售價／CategoryIds（查無資料的商品不列入回應）
-    alt 買家送來的價格與 Catalog 不符，或商品查無資料
-        Order-->>Buyer: 結帳失敗（價格已變動，請重新整理購物車）
-    else 價格核對相符
-        Order->>WMS: 原子扣庫存（reservations）
-        alt 庫存不足
-            WMS-->>Order: 失敗
-            Order-->>Buyer: 結帳失敗，不繼續
-        else 扣庫存成功
-            WMS-->>Order: 已預留
-            Order->>Promo: 驗證並套用優惠券（帶上 Catalog 查得的 CategoryIds）
-            alt 優惠券失敗
-                Promo-->>Order: 失敗
-                Order->>WMS: 補償：釋放預留庫存
-                Order-->>Buyer: 結帳失敗
-            else 優惠券成功
-                Promo-->>Order: 折扣金額
-                Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
-                alt 查詢失敗
-                    Vendor-->>Order: 失敗
-                    Order->>Promo: 補償：還原優惠券使用次數
-                    Order->>WMS: 補償：釋放預留庫存
-                    Order-->>Buyer: 結帳失敗
-                else 查詢成功
-                    Vendor-->>Order: CommissionRate（依賣家）
-                    Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
-                    Order->>Pay: 建立付款紀錄與導轉表單
-                    alt 建立失敗
-                        Pay-->>Order: 失敗
-                        Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
-                        Order->>Promo: 補償：還原優惠券使用次數
+    Order->>Order: 步驟 0.5（v0.14 新增）：由 CartId 決定性推導 OrderId，查自己的 Orders 表
+    alt 已有這個 OrderId 的落地訂單
+        Order-->>Buyer: 直接回傳既有訂單結果（不呼叫任何下游服務）
+    else 尚無落地訂單
+        Order->>Cart: 取得購物車內容
+        Cart-->>Order: 商品/數量清單
+        Order->>Catalog: 批次查詢商品目前真實售價與所屬分類
+        Catalog-->>Order: 售價／CategoryIds（查無資料的商品不列入回應）
+        alt 買家送來的價格與 Catalog 不符，或商品查無資料
+            Order-->>Buyer: 結帳失敗（價格已變動，請重新整理購物車；購物車未被標記已結帳，可重試）
+        else 價格核對相符
+            Order->>Cart: 步驟 1.6（v0.14 新增）：原子條件更新標記購物車已結帳
+            alt 標記失敗（已被標記過）
+                Order->>Order: 回頭查 Orders 表
+                alt 查到既有訂單
+                    Order-->>Buyer: 直接回傳既有訂單結果
+                else 查無（真正同時送達的另一請求仍在進行中，或先前已終局失敗）
+                    Order-->>Buyer: 結帳失敗 409（checkout_already_processed，此購物車不可再次結帳）
+                end
+            else 標記成功
+                Order->>WMS: 原子扣庫存（reservations）
+                alt 庫存不足，或同一 OrderId 的唯一約束衝突
+                    WMS-->>Order: 失敗
+                    Order-->>Buyer: 結帳失敗，不繼續
+                else 扣庫存成功
+                    WMS-->>Order: 已預留
+                    Order->>Promo: 驗證並套用優惠券（帶上 Catalog 查得的 CategoryIds）
+                    alt 優惠券失敗，或同一 OrderId 的唯一約束衝突
+                        Promo-->>Order: 失敗
                         Order->>WMS: 補償：釋放預留庫存
                         Order-->>Buyer: 結帳失敗
-                    else 建立成功
-                        Pay-->>Order: actionUrl + fields
-                        Order-->>Buyer: 導轉金流付款頁
-                        Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                    else 優惠券成功
+                        Promo-->>Order: 折扣金額
+                        Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
+                        alt 查詢失敗
+                            Vendor-->>Order: 失敗
+                            Order->>Promo: 補償：還原優惠券使用次數
+                            Order->>WMS: 補償：釋放預留庫存
+                            Order-->>Buyer: 結帳失敗
+                        else 查詢成功
+                            Vendor-->>Order: CommissionRate（依賣家）
+                            Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount 與 CartId）
+                            Order->>Pay: 建立付款紀錄與導轉表單
+                            alt 建立失敗
+                                Pay-->>Order: 失敗
+                                Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
+                                Order->>Promo: 補償：還原優惠券使用次數
+                                Order->>WMS: 補償：釋放預留庫存
+                                Order-->>Buyer: 結帳失敗
+                            else 建立成功
+                                Pay-->>Order: actionUrl + fields
+                                Order->>Order: 落地付款導轉表單快照（PaymentId/PaymentFormAction/PaymentFieldsJson，供未來冪等重放）
+                                Order-->>Buyer: 導轉金流付款頁
+                                Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                            end
+                        end
                     end
                 end
             end
@@ -180,11 +201,12 @@ sequenceDiagram
 
 1. 呼叫 Cart Service 取得購物車內容，逐項核對品項組成與數量是否與請求一致
    - **步驟 1.5（v0.13 資安修正新增，非獨立編號，緊接在步驟 1 之後、步驟 2 之前執行）**：呼叫 Catalog Service 新增的 `POST /internal/v1/catalog/products/batch`（[12-service-catalog.md](12-service-catalog.md) §5）批次查詢每個 ProductId 當下的權威售價（已套用生效中特價）與所屬分類 ID。買家結帳請求裡的單價**只用於跟這裡查得的權威售價比對**，不相符（或該 ProductId 查無資料）即整筆拒絕，回傳 409 Problem Details（`step=Catalog`，`reason=price_mismatch` 或 `product_not_found`）——這一步發生在任何庫存預留/金流呼叫之前，不需要觸發下方 §4.1 的補償鏈。此步驟之前，Handler 直接信任請求本文的 Price 計算 GrandTotal 等實際金額，任何人都能竄改該欄位，是本輪修正的核心缺口（見變更紀錄）。查得的 CategoryIds 同時供下方步驟 3 使用，修正優惠券分類範圍檢查原本恆收到空清單的相關缺口。（編號刻意標「1.5」而非重編後續步驟：13/14/16/18/23 等文件與 `ecommerce-services` 程式碼註解已大量引用「步驟 2」＝WMS、「步驟 6」＝Payment 等既有編號，整段重編會讓那些既有引用全部跟著錯誤，代價大於編號好看）
-2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗）
-3. 呼叫 Promotions Service 驗證並套用優惠券，**帶上步驟 1.5 查得的 CategoryIds**（供 `ScopeType.SpecificCategories` 範圍檢查，見 [16-service-promotions.md](16-service-promotions.md) §4.1）
+   - **步驟 1.6（v0.14 結帳冪等性修正新增，緊接在步驟 1.5 之後、步驟 2 之前執行）**：原子性標記購物車為已結帳，完整機制與設計理由見 §4.2。
+2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
+3. 呼叫 Promotions Service 驗證並套用優惠券，**帶上步驟 1.5 查得的 CategoryIds**（供 `ScopeType.SpecificCategories` 範圍檢查，見 [16-service-promotions.md](16-service-promotions.md) §4.1；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
 4. 呼叫 Vendor Service 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`GET /internal/v1/vendor/{vendorId}/commission-rate`，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
-5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出）
-6. 呼叫 Payment Service 建立付款紀錄；**這步失敗時，Order/SubOrder 在上一步已經落地**，所以補償多一個動作：標記該筆訂單 `Status = Failed`（§2 `OrderStatus` 列舉的獨立狀態，與買家主動取消的 `Cancelled` 區分，保留供事後追蹤，見 `ecommerce-services` 實作），再依序還原優惠券、釋放庫存；前三個失敗分支（庫存/優惠券/Vendor 查詢）發生在 Order/SubOrder 建立**之前**，不需要這個標記動作
+5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出，`CartId` 同時落地）
+6. 呼叫 Payment Service 建立付款紀錄；**這步失敗時，Order/SubOrder 在上一步已經落地**，所以補償多一個動作：標記該筆訂單 `Status = Failed`（§2 `OrderStatus` 列舉的獨立狀態，與買家主動取消的 `Cancelled` 區分，保留供事後追蹤，見 `ecommerce-services` 實作），再依序還原優惠券、釋放庫存；前三個失敗分支（庫存/優惠券/Vendor 查詢）發生在 Order/SubOrder 建立**之前**，不需要這個標記動作。建立成功時把完整回應（`PaymentId`/`FormAction`/`Fields`）落地到 `Order`（v0.14 新增，見 §4.2），供未來冪等重放使用
 7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數，Payment 步驟失敗時另外標記訂單 `Failed`），補償動作需冪等可重試
 8. 訂單建立後，**非同步**通知 Notification Service 推播新訂單訊息，失敗僅記錄重試，不影響訂單本身（容錯隔離原則）
 
@@ -217,6 +239,23 @@ sequenceDiagram
 
 **即時告警的殘留缺口（誠實記錄）**：本節解決了「補償失敗不會被默默遺失」（保證寫入 `SagaCompensationFailure` ＋ ERROR 等級結構化 log，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §1.3），但**即時推播告警**（Email/Slack/簡訊通知維運人員）仍依賴 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5「結構化 log 集中收集方案」這項既有待決議——該方案定案前，`PlatformSupportStaff` 只能靠**主動查詢**上述端點得知待處理項目，不會有主動推播。這是已知殘留缺口，不是遺漏。
 
+### 4.2 結帳冪等性與重複請求防護（v0.14 新增）
+
+**問題背景**：`POST /api/v1/orders/checkout` 原本完全沒有冪等保護——`OrderId` 每次呼叫都重新隨機產生，Cart 從未被標記為「已結帳」，WMS 的扣庫存與 Promotions 的套用優惠券都無條件執行、不以 OrderId 去重。買家端逾時重試（結帳當下網路壅塞很常見，尤其促銷檔期）、雙重點擊、或任何真正同時送達的重複結帳請求，會各自獨立跑完整條 Saga、各自成功：兩筆 Order/SubOrder、庫存被扣兩次、優惠券使用次數被算兩次、非 COD 訂單還會產生兩筆 Payment 導轉紀錄。**COD 訂單的重複扣庫存是永久性的**：§6 逾時未付款自動取消機制只處理非 COD 訂單（COD 下單當下即視同付款方式已確認，見該節），不會自我修復。這在促銷檔期（有限量商品、有使用上限的優惠券）最容易發生，也代價最高——正是重試/雙重點擊最常發生的流量條件。
+
+**修法（三層防護，由快到慢、由粗到細）**：
+
+1. **OrderId 決定性推導**：不再用 `Guid.NewGuid()` 隨機產生，改由 `CartId` 以 SHA-256 決定性推導（固定命名空間鹽值 + CartId 位元組取前 128 bits）——同一張購物車的每一次結帳嘗試（不論是使用者重試、還是真正同時送達的重複請求）都算出同一個 OrderId。這是下面兩層防護能夠成立的前提：沒有這個，WMS/Promotions 根本無法用「同一個 OrderId」去重。
+2. **Order orchestration 層級的冪等短路（最重要的一層）**：
+   - **步驟 0.5**（Handler 一開始）：先查自己的 Orders 資料表，若這個 CartId 推導出的 OrderId 已經有落地的訂單，直接回傳既有訂單的結果（含步驟 6 落地的付款導轉表單快照，見下方），完全不呼叫任何下游服務。這是讓「重試」真正表現成「冪等」（買家拿回同一個訂單結果，而不是一個莫名其妙的錯誤）的關鍵。
+   - **步驟 1.6**（步驟 1.5 通過後、步驟 2 之前）：呼叫 Cart Service 新增的內部端點 `POST /internal/v1/cart/{cartId}/checkout-claim`（見 [15-service-cart.md](15-service-cart.md) §4），以資料庫層的原子條件更新（`UPDATE carts SET CheckedOutOrderId=@orderId WHERE Id=@cartId AND CheckedOutOrderId IS NULL`）把購物車標記為已結帳——比照 WMS 原子扣庫存／Promotions 原子遞增使用次數的既有模式，由資料庫的列鎖保證「兩個真正同時送達的請求，只有一個能標記成功」，不是「先查再判斷」這種應用層有競態窗口的寫法。標記失敗的請求回頭查 Orders 表：找得到既有訂單就回傳；找不到（真正同時送達的另一請求仍在進行中，或該次嘗試已終局失敗）就回報業務性拒絕 `checkout_already_processed`（409）。
+   - **已知取捨（刻意簡化）**：購物車一旦被步驟 1.6 標記為已結帳，就**永久**不能再被結帳——即使這次結帳最終在更後面的步驟（WMS 庫存不足、優惠券被拒、Payment 失敗）整個失敗，也不會「解除標記」讓買家用同一張購物車重新嘗試；買家需要以新購物車（重新加入商品）才能再次結帳。真正支援「失敗後可安全重試同一張購物車」需要處理 WMS/Promotions 對「同一個 OrderId 先前已被釋放/還原、現在要重新申請」的情境，會讓下方第 3 層的唯一約束語意複雜很多，本輪判斷不值得為此增加的正確性風險。相對地，步驟 1（Cart 核對）與步驟 1.5（Catalog 核價）這兩種發生在標記**之前**、且不消耗任何下游資源的業務性拒絕（購物車不一致、價格已變動），重新整理購物車後仍可正常重試，不受影響——這是刻意選在「通過核價之後、開始消耗共享資源之前」標記的理由。這是產品層級待確認的 UX 取捨，記錄於 §6。
+3. **WMS／Promotions 資料庫層級的唯一約束**：即使上面兩層因為競態或未來的呼叫端變動被繞過，[13-service-wms.md](13-service-wms.md) 的 `StockReservation` 唯一約束與 [16-service-promotions.md](16-service-promotions.md) 的 `CouponUsageLog` 唯一約束仍然保證同一個 OrderId 不會被重複扣庫存／重複算使用次數——這是「檢查後才動作」模式在真正同時送達的請求下唯一靠得住的防線，兩服務各自的文件已記錄唯一鍵設計與併發下的處理方式（輸掉競賽的一方回報清楚的失敗，而不是假裝成功，避免後續補償鏈誤動到贏家真正持有的資源）。
+
+**冪等重放的完整性**：`Order` 新增 `PaymentId`/`PaymentFormAction`/`PaymentFieldsJson` 三個欄位（見 §2），在步驟 6 成功後落地——沒有這三個欄位，步驟 0.5／1.6 命中既有訂單時，沒有資料可以組出與第一次結帳一模一樣的付款導轉表單，重放只能回傳訂單基本資訊、無法真正做到「回傳與第一次相同的結果」。
+
+**為什麼不用買家端自帶的冪等鍵（如 `Idempotency-Key` Header）**：一張購物車（`Cart.Id`）在目前的設計裡本來就是「一次結帳嘗試」的天然範圍——購物車沒有版本化或每次結帳產生新副本的機制（見 [15-service-cart.md](15-service-cart.md) §2），一旦加上 v0.14 的已結帳標記，`CartId` 本身就具備冪等鍵需要的性質（同一個值代表同一次結帳意圖），不需要再讓前端多帶一個自產生的鍵值、Order 再額外儲存映射關係。
+
 ## 5. API 大綱
 
 | Method & Path | 說明 | 認證 |
@@ -245,3 +284,4 @@ sequenceDiagram
 - [x] ~~訂單編號產生策略需另訂~~——**已解決（正式定案）**：`ORD{日期}{8 碼亂數}` 定案為永久設計（不改成序號式編號）並補上防碰撞重試，理由與細節見 §2.1
 - [x] ~~§4、[06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §7 的 Saga 循序圖未畫出「Payment 建立失敗」分支~~——**已解決**：兩份文件的循序圖皆已補上第四個 `alt` 分支；已核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 實際行為（`OrderStatus.Failed`、補償順序為優惠券→庫存），文件與程式碼一致，見 [10-gap-analysis.md](10-gap-analysis.md) §14
 - [ ] **沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`**（v0.12 核對程式碼時意外發現，獨立於同輪修正的 Analytics 批次拉取缺口）：§2 列出的 `SubOrder.Status` 列舉值包含 `Completed`，`ecommerce-services` 現有的賣家後台也確實只做到「標記出貨」（`POST /api/v1/vendor/orders/{id}/ship` → `Shipped`），[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「訂單處理（確認、出貨、**標記已完成**）」規格中「標記已完成」這部分從未落地為端點，本文件 §5 API 大綱也只列出 `ship`，沒有對應的 complete 端點。這代表即使 §5 新增的 `GET internal/v1/orders/support/completed` 端點本身正確，實務上目前也永遠查不到任何資料。**待決議**：由誰觸發完成？(a) 賣家在後台主動標記已完成（比照「標記出貨」的既有模式，最小改動）；(b) 買家確認收貨；(c) 出貨後 N 天自動完成（背景排程，比照 §6 逾時未付款自動取消/[13-service-wms.md](13-service-wms.md) 效期排程的既有模式，需另訂天數門檻）；(d) (a)(c) 併存（賣家可提前標記，逾時未標記則自動完成，電商平台常見設計）。四種方案對 SubOrder 狀態機、通知時機、評價開放時機（[24-service-reviews.md](24-service-reviews.md) 的「子訂單完成資格」判斷依賴此狀態）皆有不同影響，需要獨立討論，不是單純的實作缺口
+- [ ] **購物車被標記已結帳後即永久不可再結帳，即使該次結帳最終失敗**（v0.14 結帳冪等性修正的刻意簡化，見 §4.2「已知取捨」段落）：目前唯一的復原方式是買家以新購物車重新加入商品——這是為了避免支援「失敗後重試同一張購物車」需要讓 WMS/Promotions 的唯一約束處理「同一個 OrderId 先前已被釋放/還原、現在要重新申請」的情境，帶來的正確性風險評估後不值得。**待決議**：這個 UX 取捨是否可接受？若不可接受，需要重新設計 WMS/Promotions 唯一約束的範圍（如改用排除已釋放列的部分索引），讓「標記已結帳但該次嘗試終局失敗」的購物車能夠安全地重新走一次 Saga
