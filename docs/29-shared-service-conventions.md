@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-09 | ordinarycas | 新增 §4.1：共用套件（`SuxoShop.Shared.*`）的資安修補強制升級窗口（7 個日曆天＋`[SECURITY]` Release Notes 標示＋人工追蹤清單，與一般版本更新的自由升級節奏區分），解決 [10-gap-analysis.md](10-gap-analysis.md) §9 已列的例外機制缺口 |
 | v0.4 | 2026-09-10 | ordinarycas | §5 解決 4 項待決議：高權限帳號 2FA 定案 TOTP、結構化 log 集中收集定案 Grafana Loki、CSP 規則逐服務盤點完成、服務身分 JWT 定案不需要快取（純本機簽章運算），回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | 新增 §3.1：`SuxoShop.Shared.Security` 補上 JWT 雙金鑰輪替支援後，跨服務層級補一筆對應說明並盤點另兩類憑證（DB 密碼、金流商／LINE 憑證）的輪替方式，解決先前完全沒有任何憑證輪替流程文件的缺口（`SuxoShop.Shared.Security/README.md` 自己的說明原本明講「沒有實作金鑰輪替機制」） |
+| v0.6 | 2026-09-11 | ordinarycas | §1.3、§5 補充：訂正「log 集中收集方案（Grafana Loki）」先前只是選型決策這件事——`ecommerce-launch/docker-compose.yml` 從未真的包含 Loki/Promtail/Grafana，本輪已在 `ecommerce-launch` 實際落地（3 容器＋預先建好的 Grafana 儀表板）並實測驗證跨服務 Correlation ID 查詢真的可用，比照 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5 v0.21「訂正先前的已解決只是設計文件層級」同一種處理方式；§1.3 另外補上一則實作面的查證備註（`service`/`correlationId` 實際巢狀在 Serilog 的 `Scopes[]` 內，非攤平頂層欄位） |
 
 > 本文件是 15 個微服務**都必須遵守**的共通規則，不是某一個服務的規格。凡是本文件定義過的慣例，各服務文件（[11](11-service-identity.md)–[25](25-service-gateway.md)）不重複定義，只在需要偏離慣例時特別註明。
 
@@ -33,7 +34,9 @@
 
 ### 1.3 結構化 Log 格式
 
-統一採 JSON 結構化 log（欄位至少含：`timestamp`、`level`、`service`、`correlationId`、`message`），方便未來集中收集（如 Serilog + Seq/ELK）時可以跨服務關聯查詢，不是各服務自訂格式。
+統一採 JSON 結構化 log（欄位至少含：`timestamp`、`level`、`service`、`correlationId`、`message`），方便集中收集時可以跨服務關聯查詢，不是各服務自訂格式。集中收集方案見 §5（Grafana Loki + Promtail + Grafana，2026-09-11 已在 `ecommerce-launch` 實際落地，非僅設計決策）。
+
+**實作面查證備註（2026-09-11）**：`ecommerce-services` 目前的實作是 Serilog 風格，`LogLevel` 是攤平的頂層欄位，但 `service`／`correlationId` 兩者實際上位於 `ILogger.BeginScope` 產生的巢狀 `Scopes[]` 陣列內，且 `Scopes[]` 內的索引位置依 log 類別/呼叫深度而不固定（已實際比對 gateway 與 catalog 兩邊的真實 log 輸出確認）。這不牴觸本節「欄位至少含...」的要求本身（欄位確實存在，只是巢狀，不是攤平），但會影響下游查詢工具的寫法——不能用位置固定的 JSON path 去抓 `correlationId`，已驗證可行的因應方式（行內容過濾，而非巢狀 JSON path 解析）見 `ecommerce-launch/README.md`「集中式日誌與監控」一節。
 
 ## 2. Markdown 處理管線（統一實作，避免各服務各自為政）
 
@@ -111,6 +114,13 @@ string RenderMarkdownToSafeHtml(string markdown)
 ## 5. 待決議事項
 - [x] ~~高權限帳號（SuperAdmin、PlatformSupportStaff）是否強制 2FA，及採用哪種方式~~——**已解決：強制，採 TOTP**（非簡訊）。理由：TOTP（如 Google Authenticator/Authy）不需要簡訊閘道商合約與費用（呼應 [23-service-notification.md](23-service-notification.md) §7 簡訊現階段不做的同一個理由）、不依賴電信商送達率、離線也能產生驗證碼，是業界對高權限帳號的標準做法；這兩個角色能碰到所有客戶或所有訂單資料，權限範圍最大，值得要求這一步驟的登入摩擦。實作上是 Identity Service（ShyeCMS 這邊）/[11-service-identity.md](11-service-identity.md)（電商平台這邊）的登入流程各自加驗證步驟，非本文件範圍，這裡只定政策
 - [x] ~~結構化 log 的集中收集方案（Serilog + Seq/ELK 等）選型~~——**已解決：Grafana Loki + Promtail**（非 ELK/Seq）。理由：ELK（Elasticsearch+Logstash+Kibana）對單一 VPS、單一客戶部署的規模是過重的方案（Elasticsearch 本身就需要可觀的記憶體）；Seq 是不錯的 .NET 生態選擇但屬於商業授權（免費層有使用限制）；Loki 專為「日誌量不大、想要輕量方案」的場景設計（索引只做標籤不做全文，儲存成本遠低於 Elasticsearch），且與本平台已經是 Docker Compose 單機部署的形態高度契合（Loki + Promtail + Grafana 三個容器即可，Grafana 還能同時拿來看其他監控指標，一魚兩吃）。各服務只需要維持既有的結構化 JSON log 輸出到 stdout（[29-shared-service-conventions.md](29-shared-service-conventions.md) §1.3 既有規範不變），Promtail 負責從 Docker log driver 收集，不需要改各服務程式碼
+
+  **已落地與驗證（2026-09-11）**：這項先前只是選型決策，`ecommerce-launch/docker-compose.yml` 當時並未真的包含這 3 個容器（比照 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §6.5 備份機制 v0.21 訂正的同一種落差）。本輪已在 `ecommerce-launch` 新增 `loki`/`promtail`/`grafana` 三個容器（預設隨 `docker compose up -d` 啟動，不比照 DB 連線模式掛 `profiles`——觀察性沒有「客戶不需要」這種正當替代情境）並實際驗證：
+  - Promtail 採 Docker Service Discovery（掛載唯讀 `/var/run/docker.sock`）收集全部容器 log，不假設 host 的 Docker 安裝路徑；已確認能收集到與自己不同 compose 專案的容器 log。
+  - 對已在跑的真實服務送出一次帶自訂 `X-Correlation-Id` 的請求（Gateway 經 YARP 轉發到 Catalog），確認 Loki 內同時查得到兩個服務的 log，且 `correlationId` 欄位值一致——透過 Grafana 預先建好的儀表板（「依 Correlation ID 追蹤跨服務請求」面板）操作也得到相同結果，完整驗證了本節「集中收集後可跨服務關聯查詢」的實際可用性，不只是理論上應該可行。
+  - 保留期限預設 14 天（`LOKI_RETENTION_PERIOD`，可調整），Grafana 管理者密碼透過 `.env` 設定，不寫死明碼預設值於 `docker-compose.yml`。
+
+  完整設計理由、驗證紀錄與已知限制見 `ecommerce-launch/README.md`「集中式日誌與監控」一節；`Scopes[]` 巢狀欄位的實作面備註見 §1.3。
 - [x] ~~Content-Security-Policy 的實際規則內容...需要逐服務盤點後才能定案~~——**已解決（盤點完成）**：
   
   | 對象 | 需要放行的外部來源 | 用途 |
