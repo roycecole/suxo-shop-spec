@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | §1 修正「訂閱事件」措辭——與 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §2「不引入訊息佇列」的決策矛盾，改為明確的定期輪詢/批次拉取，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的缺口 |
 | v0.4 | 2026-09-09 | ordinarycas | §4 補上熱銷排行/付款分布的圖表函式庫選型：Chart.js（`react-chartjs-2`），與 Lightweight Charts 職責互補；§6 對應待決議項標記已解決 |
 | v0.5 | 2026-09-10 | ordinarycas | §6 解決 2 項待決議：報表查詢效能定案即時彙總已投影資料即可、報表匯出補上 CSV 端點設計（尚未實作），回應「將待決議事項列出來實作」需求 |
+| v0.6 | 2026-09-10 | ordinarycas | §2 新增 2.1 服務內部資料表與 ER 圖（Mermaid erDiagram）：依 `ecommerce-services/services/analytics` 實作程式碼補上原本完全未列出的 5 張投影/狀態表（`SalesDailySummary`/`PaymentMethodDistribution`/`TopProductRanking`/`DataSourceSyncState`/`AnalyticsExportJob`）——§2 原表格只列資料來源服務，未列本服務自己實際落地的資料表 |
 
 ## 1. 職責
 
@@ -20,6 +21,90 @@
 | Order Service | 銷售趨勢、GMV |
 | Catalog Service | 熱銷商品排行 |
 | Payment Service | 付款方式分布 |
+
+### 2.1 服務內部資料表（投影）
+
+上方表格描述的是資料「來源」（本服務從哪個服務拉資料），並非本服務自己 schema 內實際落地的資料表——本節補上後者，原文件版本並未列出：
+
+| 實體 | 說明 |
+|---|---|
+| SalesDailySummary | 賣家 × 日彙總：GMV、訂單數、幣別、最近一次來源同步時間；供銷售趨勢/GMV 走勢使用（§4 TradingView Lightweight Charts，§5 `GET .../sales`） |
+| PaymentMethodDistribution | 賣家 × 統計區間 × 付款方式彙總：交易筆數、總金額；供付款方式分布圖使用（§4 Chart.js）——骨架階段尚未串接對應 API 端點與 Controller |
+| TopProductRanking | 賣家 × 統計區間 × 商品彙總：商品名稱快照、銷售數量、金額、名次；供熱銷商品排行使用（§4 Chart.js，§5 `GET .../top-products`） |
+| DataSourceSyncState | 依來源服務（Order/Catalog/Payment）各一筆，記錄批次拉取游標與最近執行狀態，供增量拉取使用；非業務實體，是落實 §1「定期輪詢/批次拉取」架構所需的基礎設施狀態表，規格文件未明確定義過這張表 |
+| AnalyticsExportJob | §6 已解決事項新增：CSV 報表匯出的背景工作紀錄（區間、格式、狀態機、簽章下載連結）；設計已補齊但尚未實作對應 API 端點（見 §6） |
+
+#### 2.1.1 ER 圖
+
+```mermaid
+erDiagram
+    SalesDailySummary {
+        uuid Id PK
+        uuid VendorId "cross-service reference (Vendor Service), no FK"
+        date SummaryDate
+        decimal GrossMerchandiseValue
+        int OrderCount
+        string Currency "預設 TWD"
+        datetime SourceSyncedAt
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    PaymentMethodDistribution {
+        uuid Id PK
+        uuid VendorId "cross-service reference (Vendor Service), no FK"
+        date PeriodStart
+        date PeriodEnd
+        string PaymentMethod
+        int TransactionCount
+        decimal TotalAmount
+        string Currency "預設 TWD"
+        datetime SourceSyncedAt
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    TopProductRanking {
+        uuid Id PK
+        uuid VendorId "cross-service reference (Vendor Service), no FK"
+        uuid ProductId "cross-service reference (Catalog Service), no FK"
+        string ProductName "反正規化快照"
+        date PeriodStart
+        date PeriodEnd
+        int QuantitySold
+        decimal RevenueAmount
+        string Currency "預設 TWD"
+        int Rank
+        datetime SourceSyncedAt
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    DataSourceSyncState {
+        uuid Id PK
+        enum SourceService "Order/Catalog/Payment"
+        datetime LastSuccessfulSyncAt "nullable"
+        string LastCursor "nullable"
+        string LastRunStatus
+        string LastErrorMessage "nullable"
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    AnalyticsExportJob {
+        uuid Id PK
+        uuid VendorId "cross-service reference (Vendor Service), no FK"
+        date FromDate
+        date ToDate
+        string Format "現階段固定 csv"
+        enum Status "Queued/Processing/Done/Failed"
+        datetime CreatedAt
+        datetime UpdatedAt
+        datetime CompletedAt "nullable"
+        string FilePath "nullable"
+        string DownloadUrl "nullable，簽章下載連結"
+        datetime DownloadUrlExpiresAt "nullable"
+        string ErrorMessage "nullable"
+    }
+```
+
+> 已對照 `ecommerce-services/services/analytics` 的 `Domain/Entities/*.cs` 與 `Infrastructure/Persistence/Configurations/*.cs` 實作逐欄核對。5 張表彼此之間沒有資料庫層級外鍵（皆為獨立的批次拉取投影/狀態表，各自僅有唯一索引與查詢索引），故 ER 圖不畫任何關聯線。§1「無自有寫入表」一詞依程式碼註解澄清：指本服務不對外提供任何寫入 API、不接受其他服務或前端直接寫入業務資料，並非真的沒有資料庫寫入——上述 5 張表是本服務自己的批次工作寫入的內部投影快取，與「唯讀服務」的定位並不矛盾，§1 文字保留原樣不修改。
 
 ## 3. 爸芭樂案例
 
