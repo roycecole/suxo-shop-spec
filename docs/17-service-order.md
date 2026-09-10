@@ -12,6 +12,7 @@
 | v0.7 | 2026-09-09 | ordinarycas | §2 補上 Order.Status 列舉值（原本只有欄位名、沒有值，與 SubOrder 那列不一致）；§4 循序圖補上「Payment 建立失敗」分支，核對 `ecommerce-services` 的 `CheckoutOrderCommandHandler` 確認實際行為（`OrderStatus.Failed`、補償順序優惠券→庫存）後寫入；§6 對應待決議項標記已解決，回應「將待決議事項列出來實作」需求 |
 | v0.8 | 2026-09-10 | ordinarycas | §6 逾時未付款自動取消待決議項已解決：定案 30 分鐘門檻（僅線上付款適用）、背景排程每 5 分鐘掃描、取消時觸發既有補償鏈，回應「將待決議事項列出來實作」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | §2.1 訂單編號產生規則從「暫定方案」正式定案為永久設計（理由：序號式編號會洩漏營業量、需要額外的集中計數基礎設施，划不來），追加防碰撞重試機制（最多 3 次）；§6 對應待決議項標記完全解決，回應「繼續補完 9 項未解決」需求 |
+| v0.10 | 2026-09-10 | ordinarycas | §4.1 新增 `SagaCompensationFailedStep.Payment`（稽核發現的分散式正確性缺口）：結帳 Saga 步驟 6 呼叫 Payment 若逾時/連線中斷，Order 無法區分「請求未送達」與「Payment 已處理但回應遺失」，原補償鏈只還原優惠券、釋放庫存，遺漏收斂 Payment 端可能留下的孤兒付款紀錄——比照對帳（只比對 `Status=Success`）與逾時未付款自動取消（只挑 `Order.Status=Pending`）都不會再碰到這批訂單，屬於原設計的死角；Payment 新增 `POST /internal/v1/payments/orders/{orderId}/cancel` 配合收斂，見 [18-service-payment.md](18-service-payment.md) 同步更新 |
 
 ## 1. 職責
 
@@ -111,9 +112,9 @@ sequenceDiagram
 
 通訊方式：同步 REST 呼叫鏈（Notification 除外，走非同步），不引入訊息佇列——單一客戶部署流量規模不大，非同步事件驅動換不到對應的複雜度代價。
 
-### 4.1 補償失敗的統一處理（WMS/Promotions/Order 共通設計）
+### 4.1 補償失敗的統一處理（WMS/Promotions/Payment/Order 共通設計）
 
-結帳 Saga 任一步驟失敗時觸發的補償動作（[13-service-wms.md](13-service-wms.md) 的釋放預留庫存、[16-service-promotions.md](16-service-promotions.md) 的還原優惠券使用次數）本身也可能失敗——這是全新的失敗模式（補償的補償），WMS/Promotions/Order 三個服務都會遇到。本節提供**唯一一套**設計，13、16 不各自另立，只回頭引用本節（見兩份文件各自的 §6）。
+結帳 Saga 任一步驟失敗時觸發的補償動作（[13-service-wms.md](13-service-wms.md) 的釋放預留庫存、[16-service-promotions.md](16-service-promotions.md) 的還原優惠券使用次數、[18-service-payment.md](18-service-payment.md) 的取消/收斂付款紀錄）本身也可能失敗——這是全新的失敗模式（補償的補償），WMS/Promotions/Payment/Order 四個服務都會遇到。本節提供**唯一一套**設計，13、16 不各自另立，只回頭引用本節（見兩份文件各自的 §6）；18 是本輪才加入的第三個補償目標，其取消端點（見該文件 §7）同樣依循本節的重試與人工介入設計。
 
 **設計原則**：補償失敗後，受影響的資料**保持卡住狀態**（`StockReservation.Released=false`、`Coupon.UsedCount` 未還原），**不自動嘗試修正資料**——庫存/優惠券使用次數涉及財務與庫存正確性，自動修正的風險高於暫時卡住，改由下方機制引導人工介入。
 
@@ -125,12 +126,14 @@ sequenceDiagram
 |---|---|
 | Id | |
 | OrderId | 關聯的訂單 |
-| FailedStep | 補償失敗的服務，`WMS` / `Promotions` |
+| FailedStep | 補償失敗的服務，`WMS` / `Promotions` / `Payment`（本輪新增，見下方說明） |
 | FailedAction | 呼叫的端點，如 `/internal/v1/wms/reservations/{id}/release` |
 | RetryCount | 目前已重試次數 |
 | LastError | 最後一次失敗的錯誤訊息 |
 | Status | `Open`（重試中或待人工介入）/ `Resolved`（人工確認已處理） |
 | CreatedAt / ResolvedAt / ResolvedByStaffId | |
+
+**`Payment` 補償（本輪新增，稽核發現的分散式正確性缺口）**：結帳 Saga 步驟 6 呼叫 Payment 建立付款導轉表單時，若 HTTP 呼叫本身逾時/連線中斷（不是 Payment 明確回應業務性失敗），Order 無法區分「請求根本沒送達 Payment」與「Payment 已經處理、只是回應在傳輸過程中遺失」——後者會在 Payment 端留下一筆孤兒的 `Pending` 付款紀錄，且原設計沒有任何機制會再去收斂它：對帳排程（[18-service-payment.md](18-service-payment.md) §8）只比對 `Status=Success` 的紀錄，逾時未付款自動取消（§6）只挑 `Order.Status=Pending` 的訂單，兩者都不會碰到「Order 已標記 `Failed`」的這批訂單，這批紀錄原本會永久卡住。修法比照 WMS/Promotions 既有模式：Payment 新增 `POST /internal/v1/payments/orders/{orderId}/cancel`（見 [18-service-payment.md](18-service-payment.md) §7），Order 的補償鏈在**確實執行過步驟 6**（非 COD 且流程真的走到那一步）時才呼叫它，冪等收斂該訂單在 Payment 端的紀錄。若收斂時發現該訂單其實已有 `Status=Success` 的付款（金流商真的收到款了，只是回應遺失），端點回 409，Order 端**刻意不視為補償成功**——比照本節其餘失敗一樣寫入 `SagaCompensationFailure`（`Open`），重試 4 次後仍會命中同一個 409、永遠不會自動解決，只能靠 §5 的人工介入端點核對。這是刻意的設計，不是殘留缺口：不可能讓系統自動判定「這筆可能已經收到的款項沒事了」。
 
 **升級為人工介入**：重試 4 次仍失敗後，`Status` 維持 `Open`，不再自動重試，透過 `GET /internal/v1/orders/support/compensation-failures`（見 §5）供 `PlatformSupportStaff` 查詢待處理清單，人工確認並處理（如手動重試該端點，或視情況直接修正庫存/優惠券資料）後標記 `Status=Resolved`。
 

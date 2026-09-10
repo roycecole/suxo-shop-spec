@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | `Payment` 補上 `ProviderTransactionId` 欄位與 `(Provider, ProviderTransactionId)` 唯一索引，把 §4「重複識別」從文字承諾落實成資料層保證；§2 補充說明 COD 不屬於本表的金流廠商，啟用與否唯一歸屬 [14-service-vendor.md](14-service-vendor.md) 的 `StoreSettings.CodPaymentEnabled`（見 [10-gap-analysis.md](10-gap-analysis.md) §10、§11） |
 | v0.3 | 2026-09-10 | ordinarycas | §8 處理 3 項待決議：沙箱實測標記為需要外部資源（金流商測試環境憑證），退款串接與對帳排程補上完整設計（實際 API 串接仍待沙箱環境），回應「將待決議事項列出來實作」需求 |
 | v0.4 | 2026-09-10 | ordinarycas | §8 沙箱實測項目補上取得憑證後的執行清單（4 個步驟），縮短拿到廠商測試環境後的等待時間，回應「繼續補完 9 項未解決」需求 |
+| v0.5 | 2026-09-10 | ordinarycas | §3 `Payment.Status` 新增 `Cancelled`；§7 新增 `POST /internal/v1/payments/orders/{orderId}/cancel`——結帳 Saga 步驟 6 呼叫本服務若逾時/連線中斷，Order 無法區分「請求未送達」與「本服務已處理但回應遺失」，新端點供 Order 的補償鏈冪等收斂可能留下的孤兒付款紀錄；發現有 `Status=Success` 的紀錄時拒絕取消（409），需人工介入，詳見 [17-service-order.md](17-service-order.md) §4.1（稽核發現的分散式正確性缺口） |
 
 ## 1. 職責
 
@@ -29,7 +30,7 @@
 
 | 實體 | 說明 |
 |---|---|
-| Payment | OrderId、Method（CreditCard/LinePay/ATM/CVS/COD）、Provider、Status（Pending/Success/Failed/Refunded）、TransactionId、`ProviderTransactionId`（廠商端交易序號，如 ECPay 的 `TradeNo`；COD 無廠商回調，此欄位為 null）、Amount/PaidAt。`(Provider, ProviderTransactionId)` 唯一索引（`ProviderTransactionId` 非 null 時），作為回調去重的資料層保證 |
+| Payment | OrderId、Method（CreditCard/LinePay/ATM/CVS/COD）、Provider、Status（Pending/Success/Failed/Refunded/**Cancelled**——新增值，結帳 Saga 補償鏈透過 §7 新增的取消端點收斂孤兒付款紀錄時使用，語意是「我方在不確定金流商是否收到請求的情況下主動關閉」，與金流商明確回報失敗的 `Failed` 區分，見 [17-service-order.md](17-service-order.md) §4.1）、TransactionId、`ProviderTransactionId`（廠商端交易序號，如 ECPay 的 `TradeNo`；COD 無廠商回調，此欄位為 null）、Amount/PaidAt。`(Provider, ProviderTransactionId)` 唯一索引（`ProviderTransactionId` 非 null 時），作為回調去重的資料層保證。OrderId 僅一般索引、非唯一鍵——理論上一筆訂單可能有不只一筆 `Payment` |
 | PaymentProviderSettings | 逐廠商的啟用狀態、加密後的商店代號/金鑰 |
 | PaymentCallbackLog | 所有回調（含驗章失敗者）都寫入，**永不刪除**，是對帳爭議的唯一證據 |
 
@@ -54,6 +55,7 @@ HashKey/HashIV 以 Data Protection 加密後存入資料庫，後台不回傳明
 | Method & Path | 說明 | 認證 |
 |---|---|---|
 | `POST /internal/v1/payments/orders/{id}/redirect` | 結帳 Saga 內部呼叫：產生含驗章的表單欄位 | 內部（僅 Order Service） |
+| `POST /internal/v1/payments/orders/{orderId}/cancel` | 結帳 Saga 補償鏈呼叫（[17-service-order.md](17-service-order.md) §4.1）：Order 若無法確認上一列端點的請求是否送達，呼叫本端點冪等收斂——找不到付款紀錄則無動作，`Pending` 紀錄轉 `Cancelled`（§3），已是其他終態則視為已處理；若已有 `Status=Success` 則回 409（金流商其實已收款，不可取消，需人工介入） | 內部（僅 Order Service） |
 | `POST /api/v1/payments/callback/{provider}` | 金流商 server-to-server 回調 | 對外開放（簽章驗證） |
 | `GET /api/v1/vendor/payment-settings` | 賣家查看/設定逐廠商啟用狀態 | 賣家 |
 | `PUT /api/v1/vendor/payments/{orderId}/mark-cod-received` | 賣家標記 COD 訂單已當面收款（`Payment.Status` → `Success`） | 賣家 |
