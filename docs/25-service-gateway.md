@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-09 | ordinarycas | 回應「反向代理引擎選型（YARP vs 自建）已定案」指示：新增 §4.1 定案採用 `Yarp.ReverseProxy`（YARP）取代手刻 `HttpClient` 轉發的過渡實作（含定案理由與落地現況）；§7 補列該選型為待決議項並同步標記已解決——此選型先前只散見於實作，未曾正式列入待決議清單 |
 | v0.4 | 2026-09-09 | ordinarycas | §4.1 訂正 Reviews 路由範例與 [24-service-reviews.md](24-service-reviews.md) §4 實際端點不一致的寫法（`/api/v1/orders/{id}/reviews` 誤植，應為 `/api/v1/orders/{subOrderId}/review`），[10-gap-analysis.md](10-gap-analysis.md) §14 第九輪複查發現的純格式錯誤，直接修正 |
 | v0.5 | 2026-09-09 | ordinarycas | §7 解決 4 項待決議：速率限制採記憶體計數、Webhook 現階段不需要、不開放建立訂單的公開 API、聚合文件採單一 Swagger UI + 服務切換選單，回應「將待決議事項列出來實作」需求 |
+| v0.6 | 2026-09-10 | ordinarycas | §5 新增 5.1 ER 圖（Mermaid erDiagram）；依 `ecommerce-services/services/gateway` 實作程式碼補上 `ApiKey` 的 `Name`／`IsActive` 欄位（原表格未列，分別供金鑰管理介面識別與撤銷狀態使用），核對 `AnonymousRateLimitRule` 欄位與程式碼一致 |
 
 ## 1. 職責
 
@@ -64,8 +65,33 @@ Gateway 不新開一組「內部 API」給自己呼叫，而是直接路由到�
 
 | 實體 | 說明 |
 |---|---|
-| ApiKey | Scope、RateLimitPerMinute、VendorId（可為 null，代表平台層級）、KeyHash |
+| ApiKey | Name（管理介面識別金鑰用途的名稱/備註，原表格未列）、Scope（Flags，一把金鑰可同時具備多個權限）、RateLimitPerMinute、VendorId（可為 null，代表平台層級）、KeyHash（SHA-256 雜湊，不存明文）、IsActive（是否已撤銷，原表格未列，程式碼已支援 `Revoke()` 動作） |
 | AnonymousRateLimitRule（新增，見 §3.1） | EndpointPattern（如 `/api/v1/identity/login`）、LimitPerMinute、KeyBy=`IpAddress`（固定，不隨金鑰變化） |
+
+### 5.1 ER 圖
+
+```mermaid
+erDiagram
+    ApiKey {
+        uuid Id PK
+        string Name
+        string KeyHash "SHA-256 雜湊，唯一，不存明文"
+        enum Scope "Flags：CatalogRead/OrdersRead/OrdersWrite/AnalyticsRead"
+        int RateLimitPerMinute
+        uuid VendorId "nullable=平台層級；cross-service reference (Vendor Service), no FK"
+        bool IsActive
+        datetime CreatedAt
+    }
+    AnonymousRateLimitRule {
+        uuid Id PK
+        string EndpointPattern "唯一"
+        int LimitPerMinute
+        enum KeyBy "固定 IpAddress"
+        datetime CreatedAt
+    }
+```
+
+> 已對照 `ecommerce-services/services/gateway` 的 `Domain/Entities/*.cs` 與 `Infrastructure/Persistence/Configurations/*.cs` 實作逐欄核對。`ApiKey` 與 `AnonymousRateLimitRule` 兩實體之間、以及各自與其他實體之間都沒有資料庫層級外鍵（`ApiKey.VendorId` 刻意不建跨服務外鍵，見程式碼註解「Vendor 實體屬於 Vendor Service 自己的 schema，微服務之間不能直接查表關聯」），ER 圖故意不畫任何關聯線。`Name`／`IsActive` 為程式碼補上但原 §5 表格未列出的欄位；金鑰的建立/撤銷端點（`POST /api/v1/gateway/api-keys/{id}/revoke` 等）目前僅存在於程式碼註解，本文件尚未有對應的 API 大綱小節，不在本次 ER 圖修訂範圍內。
 
 ## 6. API 文件
 
