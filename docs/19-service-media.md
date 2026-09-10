@@ -6,6 +6,7 @@
 | v0.1 | 2026-09-08 | ordinarycas | 從 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) 拆分獨立，回應「微服務拆成多個規格」需求 |
 | v0.2 | 2026-09-08 | ordinarycas | `MediaAsset` 補上 `VendorId` 欄位——先前沒有歸屬欄位，無法對照 `VendorStorageQuota` 算出「這個賣家用了多少配額」（見 [10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.3 | 2026-09-10 | ordinarycas | §7 解決 2 項待決議：影片縮圖補上 ffmpeg 技術設計（尚未實作）、CDN 加速定案現階段不需要，回應「將待決議事項列出來實作」需求 |
+| v0.4 | 2026-09-10 | ordinarycas | §3 新增 3.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`MediaAsset.OriginalFileName`/`StoredFileName`/`ContentType`/`SizeBytes`/`ThumbnailUrls`（`ThumbnailUrls` 為骨架階段依 §4 縮圖需求新增，規格表格原未列出）；確認 `MediaAsset`/`StorageProviderSettings`/`VendorStorageQuota` 三者之間沒有任何資料庫層級外鍵，ERD 依此如實不畫關聯線 |
 
 ## 1. 職責
 
@@ -26,9 +27,46 @@
 
 | 實體 | 說明 |
 |---|---|
-| MediaAsset | `VendorId`（歸屬賣家，用於配額計算）、Url、Provider、ThumbnailBytes、SortOrder |
-| StorageProviderSettings | 目前啟用的儲存後端與其憑證（加密存放） |
-| VendorStorageQuota | 逐賣家可覆寫的上傳配額，全站有預設值；目前用量＝依 `VendorId` 加總該賣家所有 `MediaAsset` 的檔案大小 |
+| MediaAsset | `VendorId`（歸屬賣家，用於配額計算）、OriginalFileName/StoredFileName（原始檔名／實際隨機檔名，見 §4）、Url、Provider、ContentType（MIME type，供 §4 格式白名單比對）、SizeBytes（原始檔案大小，配額用量加總來源）、ThumbnailBytes、ThumbnailUrls（各尺寸縮圖網址，縮圖產生失敗時為空清單）、SortOrder |
+| StorageProviderSettings | 目前啟用的儲存後端（ActiveProvider）與其憑證（EncryptedCredentialsJson，加密存放）——骨架階段以單一設定列建模（整個部署僅一列生效中設定），非逐 Provider 各存一列 |
+| VendorStorageQuota | 逐賣家可覆寫的上傳配額（VendorId 唯一、QuotaBytes），全站有預設值（未落於本表，以應用層常數承載）；目前用量＝依 `VendorId` 加總該賣家所有 `MediaAsset` 的檔案大小 |
+
+### 3.1 ERD
+
+```mermaid
+erDiagram
+    MediaAsset {
+        uuid Id PK
+        uuid VendorId "cross-service ref, Vendor Service, no FK"
+        string OriginalFileName
+        string StoredFileName "unique, random GUID + extension"
+        string Url
+        MediaStorageProvider Provider
+        string ContentType "MIME type"
+        bigint SizeBytes "original file size"
+        bigint ThumbnailBytes "nullable, total WebP thumbnail size"
+        string[] ThumbnailUrls "empty if not generated"
+        int SortOrder
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    StorageProviderSettings {
+        uuid Id PK
+        MediaStorageProvider ActiveProvider "single active row by convention, not DB-enforced"
+        string EncryptedCredentialsJson "nullable, shape varies by provider"
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+    VendorStorageQuota {
+        uuid Id PK
+        uuid VendorId "unique, cross-service ref, Vendor Service, no FK"
+        bigint QuotaBytes
+        datetimeoffset CreatedAt
+        datetimeoffset UpdatedAt
+    }
+```
+
+> 三個實體彼此之間沒有任何外鍵，已對照 `MediaAssetConfiguration`／`StorageProviderSettingsConfiguration`／`VendorStorageQuotaConfiguration` 確認——皆只設定自己的欄位與索引，沒有互相 `HasOne`/`HasForeignKey`。`MediaAsset.VendorId` 與 `VendorStorageQuota.VendorId` 只是在 Application 層依同一個 `VendorId` 做**查詢時加總**（配額用量計算，見上表），資料庫層級不存在關聯；兩者的 `VendorId` 皆是跨服務參照 Vendor Service 的商店 ID，不建 FK。`StorageProviderSettings` 是全站單列設定，與另外兩個實體完全無關聯。
 
 ## 4. 安全處理
 
