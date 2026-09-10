@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-08 | ordinarycas | §5 明確定義商品讀取端點回傳 `DescriptionHtml`（已轉換安全 HTML）而非原始 Markdown，解決 [10-gap-analysis.md](10-gap-analysis.md) §10 已列「前端可能繞過共用消毒管線」的缺口 |
 | v0.5 | 2026-09-09 | ordinarycas | §6 商品搜尋效能待決議項已解決：`ecommerce-services` 為 `Product.Name` 加上 `pg_trgm` GIN 索引（非原設想的 tsvector 全文檢索，理由見該條目），回應「將待決議事項列出來實作」需求 |
 | v0.6 | 2026-09-10 | ordinarycas | §6 稅務欄位待決議項已解決：定案不新增，維持匯出固定值，回應「將待決議事項列出來實作」需求 |
+| v0.7 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 11 個實體；交叉核對 `ecommerce-services` 實際程式碼後發現 `WooCommerceExportJob`（WooCommerce 匯出工作紀錄，§4/§5 已描述流程但 §2 資料模型表格從未列出）完全未記載，已補上一列；`ProductVariation` 一列補充其實際透過 `ProductVariationAttributeValue` 關聯表對應屬性值組合，原文字未點名此關聯表 |
 
 ## 1. 職責
 
@@ -22,10 +23,106 @@
 | Category / ProductCategory | 階層分類（多對多），支援 Parent/Child |
 | Tag / ProductTag | 標籤（多對多），無階層 |
 | ProductAttribute / ProductAttributeValue | 全域屬性（如顏色、尺寸）及其可選值 |
-| ProductVariation | 商品變體，對應一組屬性值組合，各自 SKU/Price（不含庫存，庫存查 WMS） |
+| ProductVariation | 商品變體，透過 `ProductVariationAttributeValue` 關聯表對應一組屬性值組合，各自 SKU/Price（不含庫存，庫存查 WMS） |
 | Translation | EntityType（"Product"/"Category"/"Tag"）、EntityId、LocaleCode、FieldName（如 Name、Description）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
+| WooCommerceExportJob | VendorId、Status（`Queued`/`Processing`/`Done`/`Failed`）、FilePath、DownloadUrl/DownloadUrlExpiresAt（時效性簽章下載連結）、ErrorMessage、CompletedAt——WooCommerce CSV 匯出工作紀錄，支撐 §4/§5 的非同步匯出流程 |
 
 > `StockQuantity`/`StockStatus` 已從本服務移除，改由 WMS Service 擁有，見 [13-service-wms.md](13-service-wms.md)。
+
+### 2.1 ER 圖
+
+以下實體均屬本服務自己的 PostgreSQL schema，關聯線只畫本服務內部真實存在的外鍵（FK）；`Product.VendorId`/`WooCommerceExportJob.VendorId` 是對 Vendor Service 的跨服務參照，僅為慣例對應的裸 GUID，資料庫層級無 FK 約束。`Translation` 以 `EntityType`+`EntityId` 做多型參照（可能指向 Product/Category/Tag 任一張表），同樣不是資料庫外鍵，因此圖中不畫出這兩個實體的任何關聯線。
+
+```mermaid
+erDiagram
+    Product ||--o{ ProductCategory : "分類於"
+    Category ||--o{ ProductCategory : "包含"
+    Product ||--o{ ProductTag : "標記為"
+    Tag ||--o{ ProductTag : "標記"
+    Product ||--o{ ProductVariation : "擁有"
+    ProductVariation ||--o{ ProductVariationAttributeValue : "組成"
+    ProductAttributeValue ||--o{ ProductVariationAttributeValue : "組成"
+    ProductAttribute ||--o{ ProductAttributeValue : "擁有"
+    Category o|--o{ Category : "父分類"
+
+    Product {
+        uuid Id PK
+        uuid VendorId "跨服務參照 Vendor Service，無 FK"
+        string Name
+        string Slug
+        string Description "nullable，Markdown 格式"
+        string ShortDescription "nullable，Markdown 格式"
+        enum Type
+        enum Status
+        decimal RegularPrice
+        decimal SalePrice "nullable"
+        string Sku
+        decimal Weight "nullable"
+        decimal Length "nullable"
+        decimal Width "nullable"
+        decimal Height "nullable"
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    Category {
+        uuid Id PK
+        string Name
+        string Slug UK
+        uuid ParentId FK "nullable，自我參照"
+    }
+    ProductCategory {
+        uuid ProductId PK, FK
+        uuid CategoryId PK, FK
+    }
+    Tag {
+        uuid Id PK
+        string Name
+        string Slug UK
+    }
+    ProductTag {
+        uuid ProductId PK, FK
+        uuid TagId PK, FK
+    }
+    ProductAttribute {
+        uuid Id PK
+        string Name UK
+    }
+    ProductAttributeValue {
+        uuid Id PK
+        uuid ProductAttributeId FK
+        string Value
+    }
+    ProductVariation {
+        uuid Id PK
+        uuid ProductId FK
+        string Sku UK
+        decimal Price
+    }
+    ProductVariationAttributeValue {
+        uuid ProductVariationId PK, FK
+        uuid ProductAttributeValueId PK, FK
+    }
+    Translation {
+        uuid Id PK
+        string EntityType "多型參照類型，如 Product/Category/Tag"
+        uuid EntityId "多型參照，依 EntityType 指向不同表，無 FK"
+        string LocaleCode
+        string FieldName
+        string Value
+    }
+    WooCommerceExportJob {
+        uuid Id PK
+        uuid VendorId "跨服務參照 Vendor Service，無 FK"
+        enum Status
+        datetime CreatedAt
+        datetime UpdatedAt
+        datetime CompletedAt "nullable"
+        string FilePath "nullable"
+        string DownloadUrl "nullable"
+        datetime DownloadUrlExpiresAt "nullable"
+        string ErrorMessage "nullable"
+    }
+```
 
 ## 3. 爸芭樂案例
 
