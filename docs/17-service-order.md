@@ -15,6 +15,7 @@
 | v0.10 | 2026-09-10 | ordinarycas | §4.1 新增 `SagaCompensationFailedStep.Payment`（稽核發現的分散式正確性缺口）：結帳 Saga 步驟 6 呼叫 Payment 若逾時/連線中斷，Order 無法區分「請求未送達」與「Payment 已處理但回應遺失」，原補償鏈只還原優惠券、釋放庫存，遺漏收斂 Payment 端可能留下的孤兒付款紀錄——比照對帳（只比對 `Status=Success`）與逾時未付款自動取消（只挑 `Order.Status=Pending`）都不會再碰到這批訂單，屬於原設計的死角；Payment 新增 `POST /internal/v1/payments/orders/{orderId}/cancel` 配合收斂，見 [18-service-payment.md](18-service-payment.md) 同步更新 |
 | v0.11 | 2026-09-10 | ordinarycas | §2 新增 2.2 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上表格原先遺漏的欄位——`Order.GuestEmail`/`PaymentMethod`/`WmsReservationId`/`CouponCode`/`CouponVendorId`（皆為骨架階段依自動取消/補償鏈需求新增、規格表格原未列出）、`SubOrder.VendorId`/`CommissionRate`/`ShippedAt`、`OrderItem.ProductId`；確認 `Order → SubOrder → OrderItem` 為資料庫層級強制外鍵（級聯刪除），`SagaCompensationFailure.OrderId` 未建 FK（僅索引），ERD 依此如實不畫該關聯線 |
 | v0.12 | 2026-09-10 | ordinarycas | 修正 Analytics Service 批次拉取已完成子訂單的核心缺口（稽核發現：`ecommerce-services` 的 `HttpOrderDataSource` 呼叫的端點原本不存在，每小時批次拉取永遠 404，見 [22-service-analytics.md](22-service-analytics.md) 同步更新）：§2 新增 `SubOrder.CompletedAt` 欄位並同步更新 §2.2 ERD；§5 新增 `GET internal/v1/orders/support/completed` 內部端點；§6 新增一項待決議——目前沒有任何程式碼路徑會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」，[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「標記已完成」規格尚未落地），這是核對程式碼時意外發現的獨立缺口，不在本輪修復範圍內 |
+| v0.13 | 2026-09-10 | ordinarycas | **資安修正（money-critical）**：稽核發現結帳 Saga 原本在步驟 3 直接執行 `request.Items.Sum(i => i.Price * i.Quantity)`——`Price` 是買家結帳請求本文帶入的單價快照，Cart Service 不儲存價格、Order 也從未呼叫 Catalog 查真實現價，任何人都能竄改該欄位送出任意單價，直接決定 GrandTotal、Payment 導轉付款金額與 WMS 扣庫存依據的小計。§4 新增步驟 1.5：呼叫 [12-service-catalog.md](12-service-catalog.md) v0.8 新增的 `POST /internal/v1/catalog/products/batch` 取得每個 ProductId 當下的權威售價與所屬分類 ID；買家送來的 Price 只用於比對是否與權威售價一致（不相符即整筆拒絕，409 Problem Details，`step=Catalog`/`reason=price_mismatch`，提示買家重新整理購物車），不再是金額計算來源。同時修正一個相關但獨立的缺口：優惠券分類範圍檢查（`ScopeType.SpecificCategories`）先前因為 Order 從未查過商品分類、永遠傳空 categoryIds 給 Promotions，導致這類優惠券無論購物車內容為何必然判定 `scope_not_met`（Promotions 端的檢查邏輯本身沒問題，缺口完全在 Order 這一側沒把資料準備好，見 [16-service-promotions.md](16-service-promotions.md) v0.9 §4.1）；步驟編號沿用既有慣例以「1.5」插入、不整段重編，避免連帶修改 13/14/16/18/23 等文件既有的步驟數字引用 |
 
 ## 1. 職責
 
@@ -26,7 +27,7 @@
 |---|---|
 | Order | OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
 | SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable）、CompletedAt（進入 Completed 狀態的時間戳記，nullable，新增於 v0.12——供 Analytics Service §5 `GET internal/v1/orders/support/completed` 當增量拉取游標，刻意獨立於 UpdatedAt，理由見下方 2.2 ERD 備註） |
-| OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price/Quantity |
+| OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price（下單當下的**伺服器權威單價**，v0.13 起由 §4 步驟 1.5 向 Catalog Service 查得，買家請求裡的單價僅供比對用，不是這裡落地的資料來源）、Quantity |
 
 ### 2.1 訂單編號（OrderNumber）產生規則（正式定案）
 
@@ -115,13 +116,14 @@ erDiagram
 
 ## 4. 結帳 Saga（本平台唯一的跨服務交易協調流程）
 
-爸芭樂買家結帳需跨 Cart、WMS、Promotions、Order、Payment、Notification 六個服務，由 Order Service 擔任 Saga 協調者：
+爸芭樂買家結帳需跨 Cart、Catalog、WMS、Promotions、Order、Payment、Notification 七個服務（**Catalog 為 v0.13 資安修正新增**，見下方步驟 1.5 與變更紀錄），由 Order Service 擔任 Saga 協調者：
 
 ```mermaid
 sequenceDiagram
     participant Buyer as 買家（前台）
     participant Order as Order Service<br/>(Saga 協調者)
     participant Cart as Cart Service
+    participant Catalog as Catalog Service
     participant WMS as WMS Service
     participant Promo as Promotions Service
     participant Vendor as Vendor Service
@@ -131,48 +133,55 @@ sequenceDiagram
     Buyer->>Order: POST /api/v1/orders/checkout
     Order->>Cart: 取得購物車內容
     Cart-->>Order: 商品/數量清單
-    Order->>WMS: 原子扣庫存（reservations）
-    alt 庫存不足
-        WMS-->>Order: 失敗
-        Order-->>Buyer: 結帳失敗，不繼續
-    else 扣庫存成功
-        WMS-->>Order: 已預留
-        Order->>Promo: 驗證並套用優惠券
-        alt 優惠券失敗
-            Promo-->>Order: 失敗
-            Order->>WMS: 補償：釋放預留庫存
-            Order-->>Buyer: 結帳失敗
-        else 優惠券成功
-            Promo-->>Order: 折扣金額
-            Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
-            alt 查詢失敗
-                Vendor-->>Order: 失敗
-                Order->>Promo: 補償：還原優惠券使用次數
+    Order->>Catalog: 批次查詢商品目前真實售價與所屬分類
+    Catalog-->>Order: 售價／CategoryIds（查無資料的商品不列入回應）
+    alt 買家送來的價格與 Catalog 不符，或商品查無資料
+        Order-->>Buyer: 結帳失敗（價格已變動，請重新整理購物車）
+    else 價格核對相符
+        Order->>WMS: 原子扣庫存（reservations）
+        alt 庫存不足
+            WMS-->>Order: 失敗
+            Order-->>Buyer: 結帳失敗，不繼續
+        else 扣庫存成功
+            WMS-->>Order: 已預留
+            Order->>Promo: 驗證並套用優惠券（帶上 Catalog 查得的 CategoryIds）
+            alt 優惠券失敗
+                Promo-->>Order: 失敗
                 Order->>WMS: 補償：釋放預留庫存
                 Order-->>Buyer: 結帳失敗
-            else 查詢成功
-                Vendor-->>Order: CommissionRate（依賣家）
-                Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
-                Order->>Pay: 建立付款紀錄與導轉表單
-                alt 建立失敗
-                    Pay-->>Order: 失敗
-                    Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
+            else 優惠券成功
+                Promo-->>Order: 折扣金額
+                Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
+                alt 查詢失敗
+                    Vendor-->>Order: 失敗
                     Order->>Promo: 補償：還原優惠券使用次數
                     Order->>WMS: 補償：釋放預留庫存
                     Order-->>Buyer: 結帳失敗
-                else 建立成功
-                    Pay-->>Order: actionUrl + fields
-                    Order-->>Buyer: 導轉金流付款頁
-                    Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                else 查詢成功
+                    Vendor-->>Order: CommissionRate（依賣家）
+                    Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount）
+                    Order->>Pay: 建立付款紀錄與導轉表單
+                    alt 建立失敗
+                        Pay-->>Order: 失敗
+                        Order->>Order: 本地交易標記 Order/SubOrder 為 Failed（訂單已落地，非 Cancelled）
+                        Order->>Promo: 補償：還原優惠券使用次數
+                        Order->>WMS: 補償：釋放預留庫存
+                        Order-->>Buyer: 結帳失敗
+                    else 建立成功
+                        Pay-->>Order: actionUrl + fields
+                        Order-->>Buyer: 導轉金流付款頁
+                        Order-)Noti: 非同步：新訂單通知（失敗僅記錄重試，不阻塞）
+                    end
                 end
             end
         end
     end
 ```
 
-1. 呼叫 Cart Service 取得購物車內容
+1. 呼叫 Cart Service 取得購物車內容，逐項核對品項組成與數量是否與請求一致
+   - **步驟 1.5（v0.13 資安修正新增，非獨立編號，緊接在步驟 1 之後、步驟 2 之前執行）**：呼叫 Catalog Service 新增的 `POST /internal/v1/catalog/products/batch`（[12-service-catalog.md](12-service-catalog.md) §5）批次查詢每個 ProductId 當下的權威售價（已套用生效中特價）與所屬分類 ID。買家結帳請求裡的單價**只用於跟這裡查得的權威售價比對**，不相符（或該 ProductId 查無資料）即整筆拒絕，回傳 409 Problem Details（`step=Catalog`，`reason=price_mismatch` 或 `product_not_found`）——這一步發生在任何庫存預留/金流呼叫之前，不需要觸發下方 §4.1 的補償鏈。此步驟之前，Handler 直接信任請求本文的 Price 計算 GrandTotal 等實際金額，任何人都能竄改該欄位，是本輪修正的核心缺口（見變更紀錄）。查得的 CategoryIds 同時供下方步驟 3 使用，修正優惠券分類範圍檢查原本恆收到空清單的相關缺口。（編號刻意標「1.5」而非重編後續步驟：13/14/16/18/23 等文件與 `ecommerce-services` 程式碼註解已大量引用「步驟 2」＝WMS、「步驟 6」＝Payment 等既有編號，整段重編會讓那些既有引用全部跟著錯誤，代價大於編號好看）
 2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗）
-3. 呼叫 Promotions Service 驗證並套用優惠券
+3. 呼叫 Promotions Service 驗證並套用優惠券，**帶上步驟 1.5 查得的 CategoryIds**（供 `ScopeType.SpecificCategories` 範圍檢查，見 [16-service-promotions.md](16-service-promotions.md) §4.1）
 4. 呼叫 Vendor Service 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`GET /internal/v1/vendor/{vendorId}/commission-rate`，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
 5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出）
 6. 呼叫 Payment Service 建立付款紀錄；**這步失敗時，Order/SubOrder 在上一步已經落地**，所以補償多一個動作：標記該筆訂單 `Status = Failed`（§2 `OrderStatus` 列舉的獨立狀態，與買家主動取消的 `Cancelled` 區分，保留供事後追蹤，見 `ecommerce-services` 實作），再依序還原優惠券、釋放庫存；前三個失敗分支（庫存/優惠券/Vendor 查詢）發生在 Order/SubOrder 建立**之前**，不需要這個標記動作
