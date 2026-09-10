@@ -27,6 +27,7 @@
 | v0.22 | 2026-09-10 | ordinarycas | §1 新增一項發現：`SuxoShop.Shared.Security` 補上 JWT 雙金鑰輪替支援（[29-shared-service-conventions.md](29-shared-service-conventions.md) §3.1 新增）過程中，發現 Cart Service 的使用者 JWT 驗證繞過共用套件、手刻邏輯未套用此次輪替支援，記錄為待修正項目，非本輪範圍 |
 | v0.23 | 2026-09-10 | ordinarycas | §1 新增一項發現：修正 Catalog WooCommerce 匯出的 N+1 內部呼叫問題（[12](12-service-catalog.md) §5、[13](13-service-wms.md) §5、[19](19-service-media.md) §6 新增批次端點）過程中，發現 `MediaAsset` 從未有欄位關聯到 Product，WooCommerce 匯出圖片網址欄位從骨架階段至今實際上從未真正輸出過資料——記錄為獨立待決議項目，非本輪範圍 |
 | v0.24 | 2026-09-10 | ordinarycas | **訂正 §1「`PlatformSupportStaff` 的跨服務授權模式」一列**：v0.20 標記的「已解決」查證後是**誤判**——當時只確認了 Policy 命名慣例的設計決策，從未真的檢查 5 個診斷端點程式碼；實際重新盤點 `ecommerce-services` 發現全部 5 個端點當時仍掛 `[Authorize(Policy = "InternalAny")]`（服務身分 JWT，服務對服務呼叫專用），真人 `PlatformSupportStaff` 使用者拿自己的使用者 JWT 完全無法通過，且 Gateway 路由表整個排除 `/internal/v1/*`（[29](29-shared-service-conventions.md) §3），即使角色驗證修好，Gateway（唯一對外入口）也沒有任何路徑能把請求轉發過去——功能從骨架階段至今對真人使用者完全不可達，是本文件目前為止唯一一項「記錄為已解決、但實際從未落地」的項目，已在本輪查出並真正修正，見該列更新後的說明 |
+| v0.25 | 2026-09-11 | ordinarycas | **訂正 §8「高權限帳號 2FA、CSP、log 集中收集方案、JWT 快取策略」一列**：其中「log 集中收集方案（Grafana Loki）」先前標記的「已解決」只代表 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 的選型決策，`ecommerce-launch/docker-compose.yml` 從未真的包含 Loki/Promtail/Grafana 三個容器——本輪補上真正的實作（3 個容器預設啟動＋Grafana 預先建好的儀表板）並實測驗證：送出一次帶自訂 Correlation ID 的真實跨服務請求（Gateway → Catalog）後，同一個 Correlation ID 可在 Grafana 儀表板同時查到兩服務的 log，見該列更新後的說明、[29-shared-service-conventions.md](29-shared-service-conventions.md) §5、`ecommerce-launch/README.md`「集中式日誌與監控」一節。同一列的 2FA／CSP／JWT 快取策略三項本質是 policy-only 決議，選型/決策當下即完整解決，不受此次訂正影響 |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -128,7 +129,7 @@
 | 已定案 | 說明 |
 |---|---|
 | HTTPS/HSTS、密碼雜湊、SQL Injection 防護、XSS 防護（含 Markdown 管線）、CSRF、CORS 政策、敏感憑證加密、Data Protection 金鑰持久化、API 速率限制範圍、PCI DSS（金流不落地）、服務間認證（網路隔離 + JWT） | 既有 |
-| 高權限帳號 2FA（TOTP）、CSP 詳細規則、log 集中收集方案（Grafana Loki）、服務身分 JWT 快取策略（不需要） | 已解決，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 |
+| 高權限帳號 2FA（TOTP）、CSP 詳細規則、log 集中收集方案（Grafana Loki）、服務身分 JWT 快取策略（不需要） | 已解決，見 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5。**2026-09-11 補充查證**：2FA／CSP／JWT 快取策略三項本質是 policy-only 決議，選型/決策當下即完整解決；「log 集中收集方案」不同，當時只是選型決策，`ecommerce-launch/docker-compose.yml` 從未真的包含 Loki/Promtail/Grafana 三個容器——本輪已實際落地並實測驗證（真實跨服務請求送出後，同一個 Correlation ID 可在 Grafana 儀表板同時查到 Gateway 與 Catalog 兩服務的 log），現在才是名實相符的「已解決」，細節見 `ecommerce-launch/README.md`「集中式日誌與監控」一節 |
 | ~~依賴套件掃描是否納入 CI~~ | **已解決：納入，用 `dotnet list package --vulnerable`**（.NET 內建工具，不需要額外服務）。本規格庫這幾輪的 `dotnet build`/`dotnet restore` 過程中，已經實際觀察到真實的套件漏洞警告（`NU1902`，如 `HtmlSanitizer`/`AngleSharp` 中度風險），證明這不是假設性風險——CI pipeline（見 §3、[26-project-structure.md](26-project-structure.md) §7 的 GitHub Actions）新增一個步驟跑 `dotnet list package --vulnerable --include-transitive`，發現高/嚴重風險漏洞時讓 build 失敗，中低風險先記錄不擋 build（避免每個第三方套件的例行 CVE 都卡住開發節奏，僅在風險等級真的高時才強制處理） |
 
 **建議**：資安基準文件已建立，執行面（CSP 規則是否真的夠嚴謹、2FA 是否確實落地）仍要等各服務實際開發、CI pipeline 真的跑起來後才能驗證，本文件的角色是提供規則，不是保證規則會被遵守——建議正式開發階段安排至少一次滲透測試或第三方資安稽核，而非只靠文件層級的規範。
