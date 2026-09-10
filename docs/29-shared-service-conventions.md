@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | §3 補充「各服務文件 API 大綱的讀法」統一約定，解決 [10-gap-analysis.md](10-gap-analysis.md) §11 已列的內部端點認證註記不一致疑慮——以本節為準，不需逐服務重複載明兩層防禦 |
 | v0.3 | 2026-09-09 | ordinarycas | 新增 §4.1：共用套件（`SuxoShop.Shared.*`）的資安修補強制升級窗口（7 個日曆天＋`[SECURITY]` Release Notes 標示＋人工追蹤清單，與一般版本更新的自由升級節奏區分），解決 [10-gap-analysis.md](10-gap-analysis.md) §9 已列的例外機制缺口 |
 | v0.4 | 2026-09-10 | ordinarycas | §5 解決 4 項待決議：高權限帳號 2FA 定案 TOTP、結構化 log 集中收集定案 Grafana Loki、CSP 規則逐服務盤點完成、服務身分 JWT 定案不需要快取（純本機簽章運算），回應「將待決議事項列出來實作」需求 |
+| v0.5 | 2026-09-10 | ordinarycas | 新增 §3.1：`SuxoShop.Shared.Security` 補上 JWT 雙金鑰輪替支援後，跨服務層級補一筆對應說明並盤點另兩類憑證（DB 密碼、金流商／LINE 憑證）的輪替方式，解決先前完全沒有任何憑證輪替流程文件的缺口（`SuxoShop.Shared.Security/README.md` 自己的說明原本明講「沒有實作金鑰輪替機制」） |
 
 > 本文件是 15 個微服務**都必須遵守**的共通規則，不是某一個服務的規格。凡是本文件定義過的慣例，各服務文件（[11](11-service-identity.md)–[25](25-service-gateway.md)）不重複定義，只在需要偏離慣例時特別註明。
 
@@ -61,6 +62,18 @@ string RenderMarkdownToSafeHtml(string markdown)
 簽發方式沿用既有 Open API Gateway pilot 已驗證的模式（同一把 `Jwt:SigningKey` 簽發短效 token，見 [25-service-gateway.md](25-service-gateway.md)），不另外引入 mTLS——單一 VPS 內部網路的威脅模型，mTLS 的額外憑證管理成本換不到相應的效益。
 
 **各服務文件 API 大綱的讀法（統一約定，解決註記不一致的疑慮）**：任何端點只要標示為「內部」或路徑帶 `/internal/v1/...` 前綴，就代表**兩層防禦同時適用**，不需要每個服務文件都重複寫一次「網路隔離＋服務身分 JWT」。若某端點在「內部」之外額外註明「僅限某服務呼叫」（如「內部（僅 Order Service 可呼叫）」），代表的是第二層服務身分 JWT 的 `service` claim 只允許該服務通過，是對本節規則的**進一步限縮**，不是另一套獨立機制；沒有額外註明時，預設允許任何持有效服務身分 JWT 的內部服務呼叫。
+
+### 3.1 憑證輪替
+
+本節解決一項先前完全空白的缺口：平台用到的共用憑證（JWT 簽章金鑰、DB 密碼、金流商／LINE 憑證）都沒有任何輪替流程文件，`SuxoShop.Shared.Security` 自己的 README 原本就明講「沒有實作金鑰輪替機制」。三類憑證的輪替方式並不相同：
+
+| 憑證類型 | 輪替方式 | 停機/中斷影響 |
+|---|---|---|
+| JWT 簽章金鑰（`Jwt:SigningKey`，本節/§3 所述的服務身分 JWT 與使用者 JWT 共用同一把） | `SuxoShop.Shared.Security` 已支援雙金鑰驗證：`TokenValidationParameters.IssuerSigningKeys`（複數）同時接受現行與選填的「上一代」（`Jwt:PreviousSigningKey`）兩把候選金鑰，簽發端永遠只用現行金鑰簽新 token。輪替步驟：① 現行金鑰移入 `Jwt:PreviousSigningKey`、設定新的 `Jwt:SigningKey` ② 15 個服務**不需要同時重啟**（滾動式部署即可，交接期間新舊 token 都能互相驗證通過）③ 等過最長的 Access Token 存活時間（服務身分 JWT 5 分鐘、使用者 JWT 30 分鐘——注意使用者的 30 天 Refresh Token 不是 JWT，是雜湊比對的隨機字串，不受此影響）④ 清空 `Jwt:PreviousSigningKey`，輪替才算完成。刻意只留一代（不是清單），逼迫每次輪替都要走完清空這一步。完整實作細節與測試見 `SuxoShop.Shared.Security/README.md`「金鑰輪替」一節 |
+| DB 密碼（`ConnectionStrings__Postgres`） | 沒有熱重載機制——連線字串來自 Docker Compose 環境變數，容器生命週期內固定不變，換密碼一定需要 `ALTER USER` 之後同步更新所有服務的環境變數並重建容器 | 有，重建期間服務短暫不可用 |
+| 金流商憑證（[18-service-payment.md](18-service-payment.md)）／LINE Channel Secret（[23-service-notification.md](23-service-notification.md)） | 不需要額外機制——這類憑證本來就以 ASP.NET Core Data Protection 加密存放（見 §4「敏感憑證加密」），Data Protection 原生支援多代金鑰解密，只要金鑰持久化 volume 沒被清空（§4「Data Protection 金鑰持久化」），透過既有設定 API 直接更新憑證值即可，舊版加密內容仍可正常解密 | 無 |
+
+**已知缺口**：`services/cart` 的使用者 JWT 驗證是骨架階段遺留的手刻邏輯，未透過本套件的 `AddSuxoShopUserAuthentication` 註冊，尚未套用雙金鑰驗證——真的執行 JWT 金鑰輪替時，Cart Service 可能在交接期間出現間歇性 401，見 [10-gap-analysis.md](10-gap-analysis.md)。
 
 ## 4. 資安基準（所有服務適用）
 
