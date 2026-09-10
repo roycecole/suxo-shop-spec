@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | 新增 §0 ERD（Mermaid），彙整本文件所有實體關聯 |
 | v0.4 | 2026-09-10 | ordinarycas | §6 `PastDue` SOP 待決議項已解決：定案採分階段處理流程（提醒信→人工聯繫→視情況暫停功能→轉終止評估）；GMV 抽成計算依據維持開放，標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §6 GMV 超額抽成計算依據補上已查證的業界參考區間（B2C 電商 SaaS 平台 GMV 抽成常見 1–3%），仍標記需要業主決策、非規格代為挑選具體比例，回應「繼續補完 9 項未解決」需求 |
+| v0.6 | 2026-09-10 | ordinarycas | §0 ERD 逐條對照 `shyecms-api` 實際 EF Core 設定與 Migration 修正：`Client`—`ClientSubscription` 改為選擇性一對一（`||--o|`，客戶可能尚未指派訂閱）、`Client`—`AuditLog` 改為選擇性關聯（`|o--o{`，`ClientId` 可為 null）、移除無實際 FK 佐證的 `SubscriptionPlan`—`ClientFeatureEntitlement` 關聯線（`Source=FromPlan` 僅為建立當下的快照標記，非資料庫關聯） |
 
 > 本文件列出 ShyeCMS 自己的資料庫實體，與 v1（`docs/02-data-model.md`）的客戶端資料庫**完全分開、互不共用**——ShyeCMS 只儲存「關於客戶的管理資訊」，不儲存客戶自己的商品/訂單/會員資料。型別為建議型別。
 
@@ -16,13 +17,12 @@
 ```mermaid
 erDiagram
     Client ||--o{ ClientDeployment : "有多個部署環境"
-    Client ||--|| ClientSubscription : "有一筆目前訂閱"
+    Client ||--o| ClientSubscription : "目前訂閱(可能尚未指派)"
     Client ||--o{ ClientFeatureEntitlement : "有多筆功能授權紀錄"
     Client }o--|| StaffUser : "由員工建檔(CreatedByStaffId)"
     StaffUser ||--o{ AuditLog : "產生操作紀錄"
-    Client ||--o{ AuditLog : "被記錄"
+    Client |o--o{ AuditLog : "被記錄(ClientId 可為 null)"
     SubscriptionPlan ||--o{ ClientSubscription : "被訂閱"
-    SubscriptionPlan ||--o{ ClientFeatureEntitlement : "預設功能來源(FromPlan)"
     FeatureFlag ||--o{ ClientFeatureEntitlement : "被啟用/停用"
 
     Client {
@@ -70,10 +70,15 @@ erDiagram
     AuditLog {
         uuid Id PK
         uuid StaffUserId FK
-        uuid ClientId FK
+        uuid ClientId FK "nullable"
         string Action
     }
 ```
+
+> 以上關聯已對照 `shyecms-api/src/ShyeCMS.Infrastructure/Configurations/*.cs` 的 `HasOne`/`HasMany` 設定與 `InitialCreate` Migration 實際產生的 8 個 FK 約束逐一驗證，並修正三處與實作不符之處：
+> 1. `Client`—`ClientSubscription` 為**選擇性**一對一（`ClientConfiguration.HasOne(c => c.Subscription)...`，`Client.Subscription` 為 nullable 導覽屬性）——新建客戶（`CreateClientCommandHandler`）不會連帶建立訂閱，訂閱是透過 `AssignClientSubscriptionCommand` 另外指派的動作，因此客戶可能暫時沒有訂閱紀錄，非強制一對一。
+> 2. `Client`—`AuditLog` 為**選擇性**關聯（`AuditLogConfiguration.HasOne(a => a.Client)...HasForeignKey(a => a.ClientId).OnDelete(SetNull)`，`AuditLog.ClientId` 為 `Guid?`）——非針對特定客戶的操作（如員工登入、建立其他員工帳號）不會帶 `ClientId`。
+> 3. `SubscriptionPlan` 與 `ClientFeatureEntitlement` **沒有**資料庫層級的關聯——`ClientFeatureEntitlement` 實體上沒有 `PlanId` 欄位，`Source=FromPlan`只是建立當下複製 `SubscriptionPlan.DefaultFeatureFlagKeys` 內容的**快照標記**（見 `GenerateEntitlementsFromPlanCommandHandler`），事後方案異動不會回溯影響已產生的授權紀錄，因此舊版 ERD 畫的 `SubscriptionPlan ||--o{ ClientFeatureEntitlement` 這條線予以移除。
 
 ## 1. 客戶與員工
 
