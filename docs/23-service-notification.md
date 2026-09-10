@@ -7,6 +7,7 @@
 | v0.2 | 2026-09-08 | ordinarycas | §4 補上具體重試參數（先前只寫「僅記錄並重試」），解決 [10-gap-analysis.md](10-gap-analysis.md) §12 已列的缺口 |
 | v0.3 | 2026-09-10 | ordinarycas | §7 解決 3 項待決議：LINE OA 定案站台統一一組、LINE API 費用查證官方公開資訊完成量級評估、Email 併入本服務(簡訊現階段不做)並解除 Identity 驗證信的既有卡點，回應「將待決議事項列出來實作」需求 |
 | v0.4 | 2026-09-10 | ordinarycas | §6 修正 LINE OA 綁定端點描述以呼應 v0.3 的站台統一定案（原文字仍是賣家各自綁定的舊語意，未同步更新）；新增 PlatformSupportStaff 失敗推播診斷端點，回應 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §6「診斷端點逐服務盤點」發現本服務原本遺漏這塊 |
+| v0.5 | 2026-09-10 | ordinarycas | §3 新增 `EmailNotificationLog` 實體列（§7 已解決事項「Email 併入本服務」的資料模型落地，原表格漏列）與 3.1 ER 圖（Mermaid erDiagram），依 `ecommerce-services/services/notification` 實作程式碼核對三個實體目前的實際欄位 |
 
 ## 1. 職責
 
@@ -25,6 +26,51 @@ LINE 官方帳號整合（LINE Messaging API）、通知派送。讓賣家不需
 |---|---|
 | LineOaBinding | OwnerType（Vendor/Platform）、OwnerId、ChannelId、ChannelSecretEncrypted/ChannelAccessTokenEncrypted、Status |
 | LineNotificationLog | Direction（Outbound/Inbound）、Status（Sent/Failed/Retrying）、Payload（訊息內容快照） |
+| EmailNotificationLog | §7 已解決事項新增（Email 併入本服務），原表格未列出：To（收件人）、Subject、Category（Verification/PasswordReset/Other）、Status（Sent/Failed，無 Retrying——Email 走交易型 API，沒有背景重試排程）、ProviderMessageId（供應商回傳的訊息 Id，可為 null）、ErrorMessage（可為 null） |
+
+### 3.1 ER 圖
+
+```mermaid
+erDiagram
+    LineOaBinding o|--o{ LineNotificationLog : "送出/收到多筆通知紀錄"
+
+    LineOaBinding {
+        uuid Id PK
+        enum OwnerType "Vendor/Platform"
+        uuid OwnerId "依 OwnerType 對應 Vendor Service 或平台固定值，無 FK"
+        string ChannelId
+        string ChannelSecretEncrypted
+        string ChannelAccessTokenEncrypted
+        enum Status
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    LineNotificationLog {
+        uuid Id PK
+        uuid LineOaBindingId FK "nullable"
+        enum Direction "Outbound/Inbound"
+        enum Status "Sent/Failed/Retrying"
+        jsonb Payload
+        int RetryCount
+        datetime NextRetryAt "nullable"
+        datetime LastAttemptAt "nullable"
+        string ErrorMessage "nullable"
+        datetime CreatedAt
+    }
+    EmailNotificationLog {
+        uuid Id PK
+        string To
+        string Subject
+        enum Category "Verification/PasswordReset/Other"
+        enum Status "Sent/Failed，無 Retrying"
+        string ProviderMessageId "nullable"
+        string ErrorMessage "nullable"
+        datetime CreatedAt
+        datetime SentAt "nullable"
+    }
+```
+
+> 已對照 `ecommerce-services/services/notification` 的 `Domain/Entities/*.cs` 與 `Infrastructure/Persistence/Configurations/*.cs` 實作逐欄核對。`LineNotificationLog.LineOaBindingId` 為可為 null 的內部外鍵（Webhook 收到訊息但尚無法對應到任何已知綁定時可為 null，刪除綁定時設為 null，見 `LineOaBindingConfiguration` 的 `OnDelete(SetNull)`），故畫為零或一對零或多的關聯線；`EmailNotificationLog` 與 `LineOaBinding`/`LineNotificationLog` 之間沒有任何外鍵或共用鍵，是完全獨立的資料表（Email 走 §7 已解決事項的交易型 API 供應商，不經 LINE OA 綁定），ER 圖故意不畫關聯線。`EmailNotificationLog` 為本次新增，原 §3 表格未列出。
 
 ## 4. 容錯與安全
 
