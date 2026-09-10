@@ -8,6 +8,7 @@
 | v0.3 | 2026-09-08 | ordinarycas | §4 API 大綱補齊運費區域/物流方式的查詢/編輯/刪除端點（原本只有建立），回應賣家後台運費規則管理需求（見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §1、[10-gap-analysis.md](10-gap-analysis.md) §10） |
 | v0.4 | 2026-09-10 | ordinarycas | §5 解決 2 項待決議：溫控物流視為一般宅配子選項（新增 RequiresColdChain 欄位）、超商取貨門市選擇標記為需要外部資源（電子地圖 API 官方合作），回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §5 超商取貨門市選擇項目補上取得官方合作資格後的執行清單（4 個步驟，含資料模型擴充提醒），回應「繼續補完 9 項未解決」需求 |
+| v0.6 | 2026-09-10 | ordinarycas | §2 新增 2.1 ER 圖（Mermaid erDiagram），並依 `ecommerce-services/services/shipping` 實作程式碼修正資料模型表格：`ShippingZone` 補上 `VendorId`／`RegionCodes`、`ShippingMethod` 補上 §5 已解決事項新增但先前未同步列出的 `RequiresColdChain` 與 `IsActive` 欄位 |
 
 ## 1. 職責
 
@@ -17,9 +18,46 @@
 
 | 實體 | 說明 |
 |---|---|
-| ShippingZone | 地區（如本島/離島） |
-| ShippingMethod | 宅配 / 超商取貨，RateRule（jsonb，如滿額免運、每件加價） |
+| ShippingZone | VendorId（所屬賣家，跨服務參照 Vendor Service 的 Vendor.Id，無 DB 外鍵）、地區（如本島/離島）、RegionCodes（涵蓋地區代碼清單） |
+| ShippingMethod | 宅配 / 超商取貨，RateRule（jsonb，如滿額免運、每件加價）、RequiresColdChain（布林，冷藏配送標記，§5 已解決事項新增的欄位，本表格先前未同步列出）、IsActive（是否啟用） |
 | Translation | EntityType（"ShippingMethod"）、EntityId、LocaleCode、FieldName（顯示名稱）、Value——結構沿用 [28-i18n.md](28-i18n.md) §3 的共用模式 |
+
+### 2.1 ER 圖
+
+```mermaid
+erDiagram
+    ShippingZone ||--o{ ShippingMethod : "設定多個物流方式"
+
+    ShippingZone {
+        uuid Id PK
+        uuid VendorId "cross-service reference (Vendor Service), no FK"
+        string Name
+        string RegionCodes "text[]，涵蓋地區代碼"
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    ShippingMethod {
+        uuid Id PK
+        uuid ShippingZoneId FK
+        enum Type "HomeDelivery/ConvenienceStorePickup"
+        string Name
+        jsonb RateRule
+        bool RequiresColdChain "§5 已解決事項新增"
+        bool IsActive
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    Translation {
+        uuid Id PK
+        string EntityType "多型別參照目標類型，如 ShippingMethod"
+        uuid EntityId "多型別參照目標 Id，搭配 EntityType，無 FK"
+        string LocaleCode
+        string FieldName
+        string Value
+    }
+```
+
+> 已對照 `ecommerce-services/services/shipping` 的 `Domain/Entities/*.cs` 與 `Infrastructure/Persistence/Configurations/*.cs` 實作逐欄核對，並修正上方表格兩處落後於程式碼的欄位：(1) `ShippingZone.VendorId`——程式碼註解明載「規格文件的 §2 資料模型表格沒有逐欄列出，是依 §4 API 大綱反推的必要欄位」；(2) `ShippingMethod.RequiresColdChain`——§5 已解決事項描述了這個欄位的新增，但 §2 表格先前未同步補上。`Translation` 與 `ShippingMethod` 之間是 EntityType+EntityId 的多型別鬆散參照（沿用 [28-i18n.md](28-i18n.md) §3 的共用模式），非資料庫層級外鍵，ER 圖故意不畫關聯線。
 
 ## 3. 爸芭樂案例
 
