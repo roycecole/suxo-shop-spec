@@ -17,6 +17,7 @@
 | v0.12 | 2026-09-10 | ordinarycas | 修正 Analytics Service 批次拉取已完成子訂單的核心缺口（稽核發現：`ecommerce-services` 的 `HttpOrderDataSource` 呼叫的端點原本不存在，每小時批次拉取永遠 404，見 [22-service-analytics.md](22-service-analytics.md) 同步更新）：§2 新增 `SubOrder.CompletedAt` 欄位並同步更新 §2.2 ERD；§5 新增 `GET internal/v1/orders/support/completed` 內部端點；§6 新增一項待決議——目前沒有任何程式碼路徑會把 `SubOrder.Status` 轉為 `Completed`（賣家後台只有「標記出貨」，[08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) 列出的「標記已完成」規格尚未落地），這是核對程式碼時意外發現的獨立缺口，不在本輪修復範圍內 |
 | v0.13 | 2026-09-10 | ordinarycas | **資安修正（money-critical）**：稽核發現結帳 Saga 原本在步驟 3 直接執行 `request.Items.Sum(i => i.Price * i.Quantity)`——`Price` 是買家結帳請求本文帶入的單價快照，Cart Service 不儲存價格、Order 也從未呼叫 Catalog 查真實現價，任何人都能竄改該欄位送出任意單價，直接決定 GrandTotal、Payment 導轉付款金額與 WMS 扣庫存依據的小計。§4 新增步驟 1.5：呼叫 [12-service-catalog.md](12-service-catalog.md) v0.8 新增的 `POST /internal/v1/catalog/products/batch` 取得每個 ProductId 當下的權威售價與所屬分類 ID；買家送來的 Price 只用於比對是否與權威售價一致（不相符即整筆拒絕，409 Problem Details，`step=Catalog`/`reason=price_mismatch`，提示買家重新整理購物車），不再是金額計算來源。同時修正一個相關但獨立的缺口：優惠券分類範圍檢查（`ScopeType.SpecificCategories`）先前因為 Order 從未查過商品分類、永遠傳空 categoryIds 給 Promotions，導致這類優惠券無論購物車內容為何必然判定 `scope_not_met`（Promotions 端的檢查邏輯本身沒問題，缺口完全在 Order 這一側沒把資料準備好，見 [16-service-promotions.md](16-service-promotions.md) v0.9 §4.1）；步驟編號沿用既有慣例以「1.5」插入、不整段重編，避免連帶修改 13/14/16/18/23 等文件既有的步驟數字引用 |
 | v0.14 | 2026-09-10 | ordinarycas | **正確性修正（inventory/payment-critical）**：稽核發現 `POST /api/v1/orders/checkout` 完全沒有冪等保護——`OrderId` 每次呼叫都重新隨機產生、Cart 從未被標記為已結帳、WMS/Promotions 皆不以 OrderId 去重，買家端逾時重試或雙重點擊會各自獨立成功、建立兩筆訂單、庫存與優惠券使用次數各被多算一次，COD 訂單的重複扣庫存更是永久性的（§6 逾時未付款自動取消排除 COD，不會自我修復）。新增 §4.2「結帳冪等性與重複請求防護」：OrderId 改由 CartId 決定性推導＋Order orchestration 層級的冪等短路（新增步驟 0.5／1.6）＋WMS/Promotions 資料庫唯一約束三層防護；§2/§2.2 新增 `Order.CartId`（唯一索引）與付款導轉表單快照三欄位（`PaymentId`/`PaymentFormAction`/`PaymentFieldsJson`，供冪等重放使用，不必重新呼叫 Payment）；§4 循序圖與步驟清單同步更新。[13-service-wms.md](13-service-wms.md)、[16-service-promotions.md](16-service-promotions.md)、[15-service-cart.md](15-service-cart.md) 同步更新（新增各自的唯一約束／購物車已結帳標記機制） |
+| v0.15 | 2026-09-11 | ordinarycas | **資安修正（money-critical，v0.13 已知相鄰風險的延續收斂）**：v0.13 修正買家可竄改 Price 的缺口時，本文件與 `ecommerce-services` 程式碼註解皆記載 VendorId（品項所屬賣家，供拆 SubOrder／算佣金）「本輪未一併改為伺服器權威來源，仍是已知的相鄰風險」——稽核／核對現況後本輪收斂：步驟 4 查詢 Vendor 抽成費率、步驟 5 拆分 SubOrder，原本都直接信任買家結帳請求本文的 VendorId，任何人都能竄改該欄位，把訂單導向錯誤賣家的 SubOrder，影響佣金歸屬。修法與 Price 完全對稱：§4 步驟 1.5 呼叫的 `POST /internal/v1/catalog/products/batch`（[12-service-catalog.md](12-service-catalog.md) v0.9 擴充回應）同一次批次查詢一併取得每個 ProductId 的權威 VendorId，不需第二次 Catalog 往返；買家送來的 VendorId 只用於比對，不相符即整筆拒絕，回傳 409 Problem Details（`step=Catalog`，`reason=vendor_mismatch`），比照既有 `price_mismatch` 機制。§2 `SubOrder.VendorId` 欄位說明同步更新；§4 步驟 1.5 說明與循序圖同步更新 |
 
 ## 1. 職責
 
@@ -27,7 +28,7 @@
 | 實體 | 說明 |
 |---|---|
 | Order | CartId（發起本次結帳的購物車，**唯一索引**，新增於 v0.14 結帳冪等性修正——`Order.Id` 本身也由此欄位決定性推導，見 §4.2）、OrderNumber（對外查單/顯示用編號，產生規則見 §2.1）、BuyerId（訪客可為 null，改用訪客識別）、GuestEmail（訪客查單用 Email，僅訪客訂單填值）、Status（`Pending`/`Processing`/`Completed`/`Cancelled`/`Failed`——`Failed` 是結帳 Saga 於 Order/SubOrder 已落地後才失敗時的專用狀態，見 §4 Payment 失敗分支，與買家主動取消的 `Cancelled` 區分）、PaymentStatus、PaymentMethod（付款方式快照，供 §6 逾時未付款自動取消排除 COD）、WmsReservationId（結帳當下的庫存預留 ID，供補償鏈/自動取消釋放庫存使用）、CouponCode/CouponVendorId（結帳當下套用的優惠券代碼與所屬賣家，供補償鏈/自動取消還原優惠券使用次數；兩者一律同時有值或同時為 null）、PaymentId/PaymentFormAction/PaymentFieldsJson（步驟 6 付款導轉表單的完整快照，新增於 v0.14——供冪等重放直接組出與第一次結帳一模一樣的回應，不必重新呼叫 Payment Service，見 §4.2；COD 訂單或尚未走到步驟 6 即失敗的訂單三者皆為 null）、Subtotal/ShippingFee/TaxTotal/DiscountTotal/GrandTotal |
-| SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable）、CompletedAt（進入 Completed 狀態的時間戳記，nullable，新增於 v0.12——供 Analytics Service §5 `GET internal/v1/orders/support/completed` 當增量拉取游標，刻意獨立於 UpdatedAt，理由見下方 2.2 ERD 備註） |
+| SubOrder | 依賣家拆分的子訂單，VendorId（所屬賣家，**v0.15 起為伺服器權威值**——由 §4 步驟 1.5 向 Catalog Service 批次查得，買家結帳請求裡的 VendorId 僅供比對用，不是這裡落地的資料來源，機制比照 OrderItem.Price）、Status（Pending/Confirmed/Shipped/Completed/Cancelled/ReturnRequested/Refunded）、Subtotal（該子訂單商品小計）、CommissionRate（結帳當下向 Vendor Service 查得的抽成費率快照，v0.15 起查詢用的 VendorId 同樣改用伺服器權威值）、CommissionAmount（= Subtotal × CommissionRate，結帳當下計算並落地）、ShippedAt（賣家標記出貨時間戳記，nullable）、CompletedAt（進入 Completed 狀態的時間戳記，nullable，新增於 v0.12——供 Analytics Service §5 `GET internal/v1/orders/support/completed` 當增量拉取游標，刻意獨立於 UpdatedAt，理由見下方 2.2 ERD 備註） |
 | OrderItem | ProductId（參照 Catalog Service 的商品）、ProductNameSnapshot/SKUSnapshot（下單當下快照，避免商品後續變更影響歷史訂單）、Price（下單當下的**伺服器權威單價**，v0.13 起由 §4 步驟 1.5 向 Catalog Service 查得，買家請求裡的單價僅供比對用，不是這裡落地的資料來源）、Quantity |
 
 ### 2.1 訂單編號（OrderNumber）產生規則（正式定案）
@@ -142,10 +143,10 @@ sequenceDiagram
     else 尚無落地訂單
         Order->>Cart: 取得購物車內容
         Cart-->>Order: 商品/數量清單
-        Order->>Catalog: 批次查詢商品目前真實售價與所屬分類
-        Catalog-->>Order: 售價／CategoryIds（查無資料的商品不列入回應）
-        alt 買家送來的價格與 Catalog 不符，或商品查無資料
-            Order-->>Buyer: 結帳失敗（價格已變動，請重新整理購物車；購物車未被標記已結帳，可重試）
+        Order->>Catalog: 批次查詢商品目前真實售價、所屬分類與所屬賣家
+        Catalog-->>Order: 售價／CategoryIds／VendorId（查無資料的商品不列入回應，VendorId 為 v0.15 擴充）
+        alt 買家送來的價格或賣家歸屬與 Catalog 不符，或商品查無資料
+            Order-->>Buyer: 結帳失敗（價格已變動或賣家歸屬不符，請重新整理購物車；購物車未被標記已結帳，可重試）
         else 價格核對相符
             Order->>Cart: 步驟 1.6（v0.14 新增）：原子條件更新標記購物車已結帳
             alt 標記失敗（已被標記過）
@@ -200,7 +201,7 @@ sequenceDiagram
 ```
 
 1. 呼叫 Cart Service 取得購物車內容，逐項核對品項組成與數量是否與請求一致
-   - **步驟 1.5（v0.13 資安修正新增，非獨立編號，緊接在步驟 1 之後、步驟 2 之前執行）**：呼叫 Catalog Service 新增的 `POST /internal/v1/catalog/products/batch`（[12-service-catalog.md](12-service-catalog.md) §5）批次查詢每個 ProductId 當下的權威售價（已套用生效中特價）與所屬分類 ID。買家結帳請求裡的單價**只用於跟這裡查得的權威售價比對**，不相符（或該 ProductId 查無資料）即整筆拒絕，回傳 409 Problem Details（`step=Catalog`，`reason=price_mismatch` 或 `product_not_found`）——這一步發生在任何庫存預留/金流呼叫之前，不需要觸發下方 §4.1 的補償鏈。此步驟之前，Handler 直接信任請求本文的 Price 計算 GrandTotal 等實際金額，任何人都能竄改該欄位，是本輪修正的核心缺口（見變更紀錄）。查得的 CategoryIds 同時供下方步驟 3 使用，修正優惠券分類範圍檢查原本恆收到空清單的相關缺口。（編號刻意標「1.5」而非重編後續步驟：13/14/16/18/23 等文件與 `ecommerce-services` 程式碼註解已大量引用「步驟 2」＝WMS、「步驟 6」＝Payment 等既有編號，整段重編會讓那些既有引用全部跟著錯誤，代價大於編號好看）
+   - **步驟 1.5（v0.13 資安修正新增，v0.15 擴充 VendorId，非獨立編號，緊接在步驟 1 之後、步驟 2 之前執行）**：呼叫 Catalog Service 新增的 `POST /internal/v1/catalog/products/batch`（[12-service-catalog.md](12-service-catalog.md) §5）批次查詢每個 ProductId 當下的權威售價（已套用生效中特價）、所屬分類 ID 與**所屬賣家 VendorId（v0.15 擴充）**。買家結帳請求裡的單價/VendorId **只用於跟這裡查得的權威值比對**，不相符（或該 ProductId 查無資料）即整筆拒絕，回傳 409 Problem Details（`step=Catalog`，`reason=price_mismatch`、`vendor_mismatch`（v0.15 新增）或 `product_not_found`）——這一步發生在任何庫存預留/金流呼叫之前，不需要觸發下方 §4.1 的補償鏈。此步驟之前，Handler 直接信任請求本文的 Price 計算 GrandTotal 等實際金額，任何人都能竄改該欄位，是 v0.13 修正的核心缺口；VendorId 是同一類但當時未一併處理的已知相鄰風險（見 v0.13 變更紀錄「已知的相鄰風險」用語），直接信任請求本文會讓買家有機會竄改品項所屬賣家、影響下方步驟 4 抽成費率查詢與步驟 5 SubOrder 拆分的佣金歸屬，v0.15 收斂。查得的 CategoryIds 同時供下方步驟 3 使用，修正優惠券分類範圍檢查原本恆收到空清單的相關缺口。（編號刻意標「1.5」而非重編後續步驟：13/14/16/18/23 等文件與 `ecommerce-services` 程式碼註解已大量引用「步驟 2」＝WMS、「步驟 6」＝Payment 等既有編號，整段重編會讓那些既有引用全部跟著錯誤，代價大於編號好看）
    - **步驟 1.6（v0.14 結帳冪等性修正新增，緊接在步驟 1.5 之後、步驟 2 之前執行）**：原子性標記購物車為已結帳，完整機制與設計理由見 §4.2。
 2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
 3. 呼叫 Promotions Service 驗證並套用優惠券，**帶上步驟 1.5 查得的 CategoryIds**（供 `ScopeType.SpecificCategories` 範圍檢查，見 [16-service-promotions.md](16-service-promotions.md) §4.1；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
