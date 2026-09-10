@@ -23,6 +23,7 @@
 | v0.18 | 2026-09-10 | ordinarycas | §10 解決 3 項待決議（DB 連線安全性規劃、Supabase 連線數上限定案改走 pooler、CI/CD 建置機器採代管 runner），1 項（服務資源消耗）標記為需要實測維持開放，回應「將待決議事項列出來實作」需求 |
 | v0.19 | 2026-09-10 | ordinarycas | 新增 §6.5：單一 VPS 部署（Docker 內建 Postgres 模式）的備份/災難復原策略定案（排程備份容器每日 pg_dump、異地存放、30 天保留、上線前還原演練），解決 [10-gap-analysis.md](10-gap-analysis.md) 已列多輪的「備份/災難復原策略空白」缺口，回應「將待決議事項列出來實作」需求；RTO/RPO 明確標示為估計值，正式 SLA 承諾留給業主的合約決策 |
 | v0.20 | 2026-09-10 | ordinarycas | §6.3 補上本機 `docker stats` 實測數字（16 容器閒置約 480MiB、輕載併發回應時間 p50 16ms/p95 31ms），記憶體建議下修至 4GB 並附上判斷依據；§10 對應待決議項標記部分解決（大方向風險已有實測數據，正式 VPS 覆核仍待辦），回應「繼續補完 9 項未解決」需求 |
+| v0.21 | 2026-09-10 | ordinarycas | 訂正 §6.5：發現先前的「已解決」只是設計文件層級，`ecommerce-services`／`ecommerce-launch` 的 `docker-compose.yml` 實際上從未包含任何備份機制；本輪真正落地並實測（`postgres-backup` sidecar + `scripts/pg-backup.sh`，備份→保留輪替→還原至全新 Postgres 全流程驗證通過）。備份機制改採自製 sleep-loop script 重用既有 `postgres:17` 映像檔，取代原設想的第三方映像檔 `prodrigestivill/postgres-backup-local`（理由：不信任額外第三方映像檔、不需安裝 cron daemon，單一 VPS 規模下更易稽核）；保留期限改為以份數（`BACKUP_RETENTION_COUNT`，預設 7）輪替而非固定 30 天，可調整。異地存放維持原設計，仍待實際部署時決定，非本輪範圍。同步修正 [10-gap-analysis.md](10-gap-analysis.md)、[30-open-decisions-register.md](30-open-decisions-register.md) 對應項目 |
 
 ## 0. 定位聲明
 
@@ -227,13 +228,20 @@ DB 連線方式**不寫死**，透過環境變數（`ConnectionStrings__Postgres
 
 單一 VPS 部署把風險集中到一台主機（見 §6.1），這件事本身在架構上已是定案，但備份/還原**只在「Docker 內建 Postgres」這個連線模式下才是本文件的責任**——外部 DB 模式（Supabase 或客戶自建代管）的備份/高可用性由該資料庫供應商負責，見 §6.2 已有的說明，本節只補「Docker 內建 Postgres」這個模式原本完全空白的部分：
 
-- **備份機制**：加一個獨立的排程備份容器（如 `prodrigestivill/postgres-backup-local`，一個廣泛使用、專門為「Docker Compose 內的 Postgres 排程備份」設計的現成映像檔，不需要自己刻 cron script），對 `docker-compose.yml` 裡的 `postgres` 服務執行每日 `pg_dump`——因為 15 個服務共用同一個 `suxoshop` database（見 §6.4 定案），一份 `pg_dump` 就涵蓋全部服務的 schema，不需要對每個服務分開備份。
-- **異地存放**：備份檔**不能只留在同一台 VPS 上**——VPS 本身故障或遭入侵時，本機備份會跟主資料庫一起遺失，違背備份的本意。若客戶的 Media Service（見 [19-service-media.md](19-service-media.md)）已選用 S3 相容的物件儲存，備份檔同步到同一個儲存服務的另一個 bucket/前綴即可，不需要為了備份另外引入一套儲存服務；若 Media 走本機儲存，則需要額外決定一個異地目的地（如 Backblaze B2 之類的低成本物件儲存），這是唯一還留給實際部署時依客戶預算決定的細節。
-- **保留期限**：預設 **30 天**，可依客戶合約調整——這是合理的技術預設值，不是本文件武斷鎖死的數字。
-- **還原演練**：客戶上線前**至少執行一次實際還原測試**（在測試環境把某天的備份還原回一個乾淨的 Postgres，確認資料完整可用）並寫成文件化的還原 SOP——從沒被實際還原驗證過的備份，不能被信任為「有效的備份」，這是備份設計裡最容易被跳過但也最重要的一步。
+- **備份機制（2026-09-10 已實作＋驗證，見本節末「已落地與驗證」）**：加一個獨立的排程備份 sidecar，對 `docker-compose.yml` 裡的 `postgres` 服務執行排程 `pg_dump`——因為 15 個服務共用同一個 `suxoshop` database（見 §6.4 定案），一份 `pg_dump` 就涵蓋全部服務的 schema，不需要對每個服務分開備份。**實作時改用自製 sleep-loop script（`scripts/pg-backup.sh`）+ 重用專案本來就在拉的 `postgres:17` 官方映像檔，取代這裡原先設想的第三方現成映像檔 `prodrigestivill/postgres-backup-local`**：pg_dump 版本與主 DB 保證一致、不需要額外信任一個非官方維護者的映像檔或研究它的組態旗標；單一 VPS、沒有編排工具的部署規模下，幾十行看得懂每一行在做什麼的 shell script，比引入一個新的外部依賴更划算、更容易稽核，這也是 §6.5 一貫「依賴愈少、愈容易稽核」的取捨標準。也不需要額外安裝/信任 cron daemon——官方 postgres image 沒有預裝 cron，sleep-loop 用一個常駐迴圈就達到同樣的排程效果。
+- **異地存放**：備份檔**不能只留在同一台 VPS 上**——VPS 本身故障或遭入侵時，本機備份會跟主資料庫一起遺失，違背備份的本意。若客戶的 Media Service（見 [19-service-media.md](19-service-media.md)）已選用 S3 相容的物件儲存，備份檔同步到同一個儲存服務的另一個 bucket/前綴即可，不需要為了備份另外引入一套儲存服務；若 Media 走本機儲存，則需要額外決定一個異地目的地（如 Backblaze B2 之類的低成本物件儲存），這是唯一還留給實際部署時依客戶預算決定的細節——**本機備份/保留輪替/還原已落地，異地同步這一步維持原樣，仍是部署時才決定的細節，不在這輪落地範圍內**。
+- **保留期限**：以「保留最新 N 份備份」輪替（非以天數計），透過 `BACKUP_RETENTION_COUNT` 環境變數設定，**實作預設值為 7**（對應每日一次備份即為保留 7 天）——這是比原設計的 30 天更保守的初始預設，優先確保「機制本身有真的在動、有經過驗證」；保留份數完全是部署時可調的環境變數，客戶合約若需要更長的保留期，把 `BACKUP_RETENTION_COUNT` 調成 30（或任意天數對應的份數）即可，不需要改程式邏輯，也不算重新定案。
+- **還原演練**：客戶上線前**至少執行一次實際還原測試**（在測試環境把某天的備份還原回一個乾淨的 Postgres，確認資料完整可用）並寫成文件化的還原 SOP——從沒被實際還原驗證過的備份，不能被信任為「有效的備份」，這是備份設計裡最容易被跳過但也最重要的一步。**這個演練本身已在 2026-09-10 實際執行過一次**（細節見本節末）。
 - **RTO/RPO 是估計值，不是合約承諾**：以每日備份的頻率推算，RPO（可容忍的資料遺失量）約 24 小時；RTO（復原所需時間）粗估數小時等級（人工介入：準備新主機或容器、還原備份、重新指向網域）。**這兩個數字本身若要成為對客戶的正式 SLA 承諾，是拾夜科技的業務/合約決策，不是這份技術規格能單方面代為承諾的**——本節只負責把「怎麼做到」的技術方案定案，多快、多可靠是合約層級的另一件事。
 
 若備份頻率/RTO 真的要更緊（如金流交易密集到 24 小時的資料遺失無法接受），需要更即時的機制（如 PostgreSQL 的 WAL 歸檔/時間點復原），屬於超出目前規模的進階需求，本節不預先設計。
+
+**已落地與驗證（2026-09-10）**：本節先前曾被 [10-gap-analysis.md](10-gap-analysis.md)、[30-open-decisions-register.md](30-open-decisions-register.md) 標記「已解決」，但當時只是把上面這份技術方案寫成文件，`ecommerce-services`／`ecommerce-launch` 的 `docker-compose.yml` 實際上都還沒有任何備份容器、備份機制形同空白——這個落差是本輪才發現並補上的。實際落地內容：
+
+- `ecommerce-services/docker-compose.yml`、`ecommerce-launch/docker-compose.yml` 皆新增 `postgres-backup` 服務（與 `postgres` 同一個 `profiles: ["db"]`），掛載 `ecommerce-services/scripts/pg-backup.sh`／`ecommerce-launch/scripts/pg-backup.sh`（兩份內容一致，各自獨立版控，理由見腳本開頭註解），把備份寫進新增的具名 volume `postgres_backups`。
+- 實際跑過一次完整驗證：啟動 `postgres` + `postgres-backup`（`docker compose --profile db up -d`）→ 寫入測試資料 → 確認排程 `pg_dump` 依設定間隔持續產生 `.sql.gz` 備份、且超過 `BACKUP_RETENTION_COUNT` 份數的舊備份會被自動刪除（保留輪替行為正確）→ 取出最新一份備份 → 還原到另一個全新、獨立的 Postgres 容器（不同 volume、不同容器，模擬換一台全新主機）→ 確認資料正確還原。`ecommerce-launch/docker-compose.yml` 的獨立寫法（`depends_on` 未加健康檢查條件，改由腳本自己的 `pg_isready` 迴圈把關）也另外跑過同樣的驗證，兩份 compose 檔案都是真的可以動的。
+- 還原 SOP 文件化在 `ecommerce-launch/README.md`「資料庫備份與還原」一節，供新客戶上線 SOP（該檔案「新客戶上線 SOP」章節）引用。
+- 異地存放**仍未落地**，維持上面「這是唯一還留給實際部署時依客戶預算決定的細節」的原始定位，不算本輪遺漏。
 
 爸芭樂買家結帳（如同時購買珍珠芭樂+帝王芭樂）需跨 Cart、WMS、Promotions、Order、Payment、Notification 六個服務，由 **Order Service 擔任 Saga 協調者**：
 
