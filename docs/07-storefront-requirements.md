@@ -15,6 +15,7 @@
 | v0.10 | 2026-09-10 | ordinarycas | §5 訪客結帳防詐機制待決議項已解決：現階段不強制簡訊驗證，採分層防詐（速率限制+Email 驗證），回應「將待決議事項列出來實作」需求 |
 | v0.11 | 2026-09-12 | ordinarycas | §3.1 補上「首頁尚未接上 CMS Service」缺口的具體交叉引用——先前只在本節提到「屬於既有已知缺口」但沒有指向任何集中追蹤處，[10-gap-analysis.md](10-gap-analysis.md) 新增 §15 集中盤點這個缺口與相關斷點（`AboutUs`/`Custom` 版型連前台路由都不存在、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象），回應「集中追蹤首頁 CMS 串接斷開處」需求 |
 | v0.12 | 2026-09-12 | ordinarycas | §3.1 整節重寫：`ecommerce-storefront` 第七輪把首頁互動 3D 芭樂從舊版雙態展示 hero（單一 `role="button"` 容器、`aria-pressed` 切換）升級為「結構標註圖」（`components/guava-callout-diagram.tsx`，舊檔 `guava-hero.tsx` 已併入移除），本節先前仍描述已不存在的舊元件行為，未反映現況；重寫為 4 個獨立熱點（各自 `aria-expanded`/`aria-controls`，查證來源的營養事實）、全程展開的文字化等價列表、WebGL 建立失敗時退回靜態 SVG 剖面圖的現況，回應本輪規格同步稽核發現的落後缺口 |
+| v0.13 | 2026-09-12 | ordinarycas | 新增 §3.2：記錄 `ecommerce-storefront` 本輪同時新增、先前完全未寫入規格的揭示型導覽選單（`components/site-header.tsx`，WAI-ARIA disclosure navigation pattern），回應本輪規格同步稽核發現的落後缺口 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -74,6 +75,22 @@
 | 文案與翻譯範圍 | 提示文案、按鈕與熱點的 `aria-label` 走三語字典（[28-i18n.md](28-i18n.md) §5 UI 文字），三語皆完整；**4 個熱點查證過的營養事實/來源內容本身刻意只在 zh-Hant 定義**，en/ja 依既有 fallback 規則沿用同一份中文內容（比照既有「事實類」內容的慣例），屬刻意留待日後另行查證/專業翻譯的範疇，不是本節新增的缺口 |
 
 **與 CMS Service 的關係**：這是首頁模板裡**寫死**的固定視覺效果，不透過 CMS Service 的 `PageSection`/`Config` 機制管理，賣家後台無法關閉或替換它——與同一頁面上其餘走 CMS 管理的內容區塊（Banner／RichText 等）是不同性質的東西，屬於「爸芭樂」這個範例案例本身的品牌呈現，比照白牌客戶各自客製首頁模板的預期（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），不是每個白牌客戶都會有的通用平台功能。首頁其餘文字內容目前仍是佔位文案、尚未實際接上 CMS Service 查詢，這點屬於既有已知缺口（不是本節新增的設計）——完整盤點見 [10-gap-analysis.md](10-gap-analysis.md) §15：`AboutUs`/`Custom` 版型連前台路由都不存在（同一個根本缺口的延伸，不是各自獨立遺漏）、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象、賣家後台的版型編輯器是完整可用的真實功能因此容易讓操作者誤判「發佈後買家端已生效」。
+
+### 3.2 全站導覽：揭示型選單（Disclosure Navigation，本輪新增）
+
+`ecommerce-storefront` 全站共用的 `<header>`（`components/site-header.tsx`，隱含 `banner` landmark）本輪把主要導覽（首頁/商品/購物車/訂單）從先前一排常駐的小連結，改為 **WAI-ARIA Authoring Practices 的揭示型選單（disclosure navigation pattern）**：一顆觸發按鈕 + 一片緊貼 header 下緣、展開時淡入並些微位移的面板。先前完全未寫入規格，本節為本輪新增：
+
+| 項目 | 說明 |
+|---|---|
+| 觸發按鈕 | `<button aria-expanded aria-controls>`，`aria-expanded` 反映面板目前是否展開，`aria-controls` 指向面板的 `id`；按鈕文案在展開/收合兩態各自對應「選單」/「關閉選單」，三語字典化 |
+| 面板內容 | 語意完整的 `<nav aria-label="…"><ul><a>`，**不套用 `role="menu"`/`menuitem`**——那是給選單列/應用程式選單用的角色，套在一般導覽連結上會讓螢幕報讀軟體的操作方式跟使用者預期不符，是 ARIA APG 明確不建議的用法，本元件刻意避免 |
+| 收合時的隱藏機制 | 面板收合時套用 `inert` 屬性（而非 `hidden`）——收合時鍵盤/螢幕報讀皆摸不到、Tab 不會跳進去，行為等同 `hidden`，但因為只是 `inert` 而非 `display:none`，收合/展開之間的淡入＋些微位移過渡（CSS `opacity`/`transform`）才有起點可以動畫；`hidden` 屬性做不到這點（`display:none` 無法 transition） |
+| Escape 收合 | 面板展開時按 `Escape`：收合面板並把焦點還給觸發按鈕，避免焦點遺失 |
+| 點擊面板外收合 | 面板展開時，點擊面板與觸發按鈕以外的任何地方（`mousedown` 監聽）：收合面板 |
+| 換頁後的狀態重置 | 換頁後面板不應該還留著上一頁展開的狀態——`pathname` 改變時在 render 期間直接重設 `isNavOpen`，不透過 `useEffect`（避免多一次 cascading render） |
+| `prefers-reduced-motion` | 全站共用規則已把 `transition-duration` 壓到近乎 0——使用者開啟「減少動態效果」時，面板展開/收合會直接「瞬間」切換，功能（展開/收合/可操作性）不受影響 |
+
+**適用範圍**：這是全站共用 `<header>` 元件，不是首頁專屬——套用在前台每一個頁面，與 §3.1 首頁固定視覺效果（僅首頁）是不同範疇的東西。
 
 ## 4. 商品詳情頁的現貨顯示
 
