@@ -21,6 +21,7 @@
 | v0.16 | 2026-09-11 | ordinarycas | §6「沒有任何機制會把 `SubOrder.Status` 轉為 `Completed`」待決議項定案並解決：採方案 (c) 出貨後 N 天自動完成（N=5 天，背景排程每小時掃描一次），`ecommerce-services` 新增 `SubOrderAutoCompletePass`／`SubOrderAutoCompleteWorker`，結構比照既有的 `UnpaidOrderAutoCancelPass`／`Worker`。實作過程中另發現並一併修正一個獨立但相關的缺口：[24-service-reviews.md](24-service-reviews.md) 的評價資格檢查一直呼叫 `GET internal/v1/orders/sub-orders/{subOrderId}`，但本服務從未實作過這個端點（每次呼叫皆 404），即使 `SubOrder.Status` 正確轉為 `Completed`，評價功能實際上仍然無法使用——已於 §5 補上此端點；兩者一併修正後，已用真實 Docker Compose 環境（真實買家帳號、真實子訂單資料、真實服務間 HTTP 呼叫）驗證評價送出功能確實恢復正常 |
 | v0.17 | 2026-09-11 | ordinarycas | §5 新增 `GET internal/v1/orders/{orderId}/vendor-ids` 內部端點：供 Payment Service 查詢訂單所屬賣家清單（依 `SubOrder.VendorId` 去重）。緣由：稽核 Payment Service 發現其 `mark-cod-received`／退款兩個賣家端點原本完全未驗證操作者是否為訂單實際歸屬賣家（任一已驗證賣家皆可操作平台上任意其他賣家的訂單），修正這個授權缺口需要 Payment Service 即時查詢本服務——因為 `Payment` 實體本身不持有 `VendorId`，且訂單可能依 §4 步驟 5 拆成多筆不同賣家的 `SubOrder`，無法只靠 Payment 自己的資料回答「這筆訂單屬於哪個賣家」。詳見 [18-service-payment.md](18-service-payment.md) v0.8。 |
 | v0.18 | 2026-09-12 | ordinarycas | **效能修正**：§5 `GET internal/v1/orders/support/completed`（v0.12 新增，供 Analytics Service 每小時批次輪詢）與 §2.2 ERD 補充說明——`SubOrder` 新增 `(Status, CompletedAt, Id)` 複合索引（`IX_sub_orders_Status_CompletedAt_Id`）。緣由：該查詢原本只有 `VendorId` 一個索引，一直是全表掃描；出貨後 5 天自動完成機制（v0.16 `SubOrderAutoCompletePass`）上線前幾乎沒有子訂單真的到過 `Completed` 狀態，缺口長期低影響，該機制上線後 `sub_orders` 開始在真實流量下持續累積 `Completed` 列，缺口即刻變得有意義。欄序比照 [18-service-payment.md](18-service-payment.md) `IX_Payments_Provider_Status_PaidAt` 既有慣例（等值篩選欄位在前、範圍篩選/排序欄位在後），額外納入 `Id` 供 `.ThenBy(Id)` 的排序 tie-break（`SubOrderAutoCompletePass` 每輪對整批候選子訂單寫入同一個時間戳，同一毫秒內多筆完成是設計上會發生的情境，非理論邊界）完全由索引順序滿足。已在真實 Postgres 上以 100 萬筆規模的 seed 資料驗證：分頁查詢由 Parallel Seq Scan（30-51ms）降到 Index Only Scan（0.17-0.23ms），詳見 `ecommerce-services` 對應 commit。純資料庫層級效能修正，不變更任何 API 契約或查詢結果。 |
+| v0.19 | 2026-09-12 | ordinarycas | **效能修正**：稽核發現結帳 Saga 步驟 4（查詢各賣家抽成費率）原本對 `trustedItems` 內每個不同的 VendorId 逐一序列化呼叫 [14-service-vendor.md](14-service-vendor.md) 的單筆端點 `GET .../{vendorId}/commission-rate`（購物車橫跨 K 個不同賣家＝K 次序列化 await 的 HTTP 往返），且發生在步驟 2 WMS 已原子性預留庫存**之後**——每多一次往返都拉長「庫存已鎖住但訂單尚未確定成立」的時間窗，購物車橫跨多個賣家（一張訂單拆多個 SubOrder）是本平台的常態情境，不是邊緣案例。修法比照步驟 1.5 呼叫 Catalog 批次定價端點的既有模式：Vendor Service 新增 `POST /internal/v1/vendor/commission-rates/batch`（見 [14-service-vendor.md](14-service-vendor.md) v0.7 §4），步驟 4 一次查完全部不同賣家的抽成費率，取代原本的 N+1 序列化呼叫；行為保持不變——任一賣家查無抽成費率仍視為 `vendor_not_found` 業務性拒絕，觸發與原本相同的補償鏈；單筆端點本身未刪除、行為亦未變動。§4 步驟清單與循序圖同步更新 |
 
 ## 1. 職責
 
@@ -175,14 +176,14 @@ sequenceDiagram
                         Order-->>Buyer: 結帳失敗
                     else 優惠券成功
                         Promo-->>Order: 折扣金額
-                        Order->>Vendor: 查詢各 SubOrder 所屬賣家的 CommissionRate
-                        alt 查詢失敗
+                        Order->>Vendor: 批次查詢各 SubOrder 所屬賣家的 CommissionRate（一次查完全部不同賣家，v0.19 效能修正）
+                        alt 任一賣家查無費率
                             Vendor-->>Order: 失敗
                             Order->>Promo: 補償：還原優惠券使用次數
                             Order->>WMS: 補償：釋放預留庫存
                             Order-->>Buyer: 結帳失敗
                         else 查詢成功
-                            Vendor-->>Order: CommissionRate（依賣家）
+                            Vendor-->>Order: CommissionRate（依賣家，單次回應涵蓋全部賣家）
                             Order->>Order: 本地交易建立 Order/SubOrder（Pending，含 CommissionAmount 與 CartId）
                             Order->>Pay: 建立付款紀錄與導轉表單
                             alt 建立失敗
@@ -210,7 +211,7 @@ sequenceDiagram
    - **步驟 1.6（v0.14 結帳冪等性修正新增，緊接在步驟 1.5 之後、步驟 2 之前執行）**：原子性標記購物車為已結帳，完整機制與設計理由見 §4.2。
 2. 呼叫 WMS Service 原子扣庫存（成功視為已預留，失敗則整筆結帳失敗；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
 3. 呼叫 Promotions Service 驗證並套用優惠券，**帶上步驟 1.5 查得的 CategoryIds**（供 `ScopeType.SpecificCategories` 範圍檢查，見 [16-service-promotions.md](16-service-promotions.md) §4.1；v0.14 起同一 OrderId 重複呼叫是安全的，見 §4.2）
-4. 呼叫 Vendor Service 查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`GET /internal/v1/vendor/{vendorId}/commission-rate`，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；查詢失敗視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
+4. 呼叫 Vendor Service **批次**查詢各 SubOrder 所屬賣家目前的 `CommissionRate`（`POST /internal/v1/vendor/commission-rates/batch`，一次查完 `trustedItems` 內全部不同賣家，v0.19 效能修正，取代逐一呼叫單筆端點 `GET .../{vendorId}/commission-rate` 的 N+1 序列化 HTTP 往返——該單筆端點仍保留供未來只需查單一賣家費率的呼叫端使用，見 [14-service-vendor.md](14-service-vendor.md) §4），用於計算 `SubOrder.CommissionAmount`；任一賣家查無抽成費率視同整筆結帳失敗，觸發與優惠券/庫存相同的補償鏈
 5. 建立 Order/SubOrder（Order Service 自己的資料庫，本地原子交易，`CommissionAmount` 已由上一步算出，`CartId` 同時落地）
 6. 呼叫 Payment Service 建立付款紀錄；**這步失敗時，Order/SubOrder 在上一步已經落地**，所以補償多一個動作：標記該筆訂單 `Status = Failed`（§2 `OrderStatus` 列舉的獨立狀態，與買家主動取消的 `Cancelled` 區分，保留供事後追蹤，見 `ecommerce-services` 實作），再依序還原優惠券、釋放庫存；前三個失敗分支（庫存/優惠券/Vendor 查詢）發生在 Order/SubOrder 建立**之前**，不需要這個標記動作。建立成功時把完整回應（`PaymentId`/`FormAction`/`Fields`）落地到 `Order`（v0.14 新增，見 §4.2），供未來冪等重放使用
 7. 任一步驟失敗 → 觸發補償（還原庫存、還原優惠券使用次數，Payment 步驟失敗時另外標記訂單 `Failed`），補償動作需冪等可重試
