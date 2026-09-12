@@ -14,6 +14,7 @@
 | v0.9 | 2026-09-10 | ordinarycas | §5 LINE/Google OAuth 串接時程標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
 | v0.10 | 2026-09-10 | ordinarycas | §5 訪客結帳防詐機制待決議項已解決：現階段不強制簡訊驗證，採分層防詐（速率限制+Email 驗證），回應「將待決議事項列出來實作」需求 |
 | v0.11 | 2026-09-12 | ordinarycas | §3.1 補上「首頁尚未接上 CMS Service」缺口的具體交叉引用——先前只在本節提到「屬於既有已知缺口」但沒有指向任何集中追蹤處，[10-gap-analysis.md](10-gap-analysis.md) 新增 §15 集中盤點這個缺口與相關斷點（`AboutUs`/`Custom` 版型連前台路由都不存在、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象），回應「集中追蹤首頁 CMS 串接斷開處」需求 |
+| v0.12 | 2026-09-12 | ordinarycas | §3.1 整節重寫：`ecommerce-storefront` 第七輪把首頁互動 3D 芭樂從舊版雙態展示 hero（單一 `role="button"` 容器、`aria-pressed` 切換）升級為「結構標註圖」（`components/guava-callout-diagram.tsx`，舊檔 `guava-hero.tsx` 已併入移除），本節先前仍描述已不存在的舊元件行為，未反映現況；重寫為 4 個獨立熱點（各自 `aria-expanded`/`aria-controls`，查證來源的營養事實）、全程展開的文字化等價列表、WebGL 建立失敗時退回靜態 SVG 剖面圖的現況，回應本輪規格同步稽核發現的落後缺口 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -55,17 +56,22 @@
 | 訂單查詢頁（會員） | Order Service（依登入身分查詢） | CSR |
 | 訂單查詢頁（訪客） | Order Service（訂單編號 + Email） | CSR |
 
-### 3.1 首頁固定視覺效果：互動式 3D 芭樂（現況記錄）
+### 3.1 首頁固定視覺效果：互動式 3D 芭樂「結構標註圖」（現況記錄，第七輪重寫）
 
-`ecommerce-storefront` 首頁已實作一個互動式 3D 芭樂模型（呼應賣家品牌「爸芭樂」與熱銷商品「紅心芭樂」），先前只以元件內的說明註解存在，未回頭寫進本文件：
+`ecommerce-storefront` 首頁的互動式 3D 芭樂模型（呼應賣家品牌「爸芭樂」與熱銷商品「紅心芭樂」）第七輪（2026-09-12）由雙態展示 hero 升級為「結構標註圖」——沿用同一套 three.js 幾何/剖面手法，疊加一層熱點標註，讓使用者互動了解各部位的營養事實，不只是「切開看好玩」的展示效果。**本節先前描述的是已刪除的舊元件行為（單一 `role="button"` 容器、切開狀態以 `aria-pressed` 表達），未反映現況**，以下整節依現況重寫：
 
 | 項目 | 說明 |
 |---|---|
+| 元件 | `components/guava-callout-diagram.tsx` + `guava-callout-diagram-loader.tsx`（`next/dynamic({ ssr:false })` 包裝層，因 Server Component 頁面不能直接寫 `ssr:false`）。前身 `guava-hero.tsx`（LatheGeometry 車身、拖曳旋轉＋慣性＋閒置自轉、點擊切換整顆/剖半的雙態展示 hero）已併入本檔並移除，避免首頁維護兩顆平行的 3D 芭樂實作 |
 | 呈現方式 | 純 three.js 程序化建模（`LatheGeometry` 車出果身輪廓＋果蒂＋葉片），**不載入任何外部 3D 模型或貼圖檔**——不增加 SSG 產物體積，也沒有跨網域資源請求 |
 | 互動：旋轉 | 拖曳（滑鼠／觸控皆可）旋轉；放開後保留慣性、逐漸衰減；閒置一段時間後緩慢自轉 |
-| 互動：切開 | 點擊，或聚焦後按 Enter／空白鍵：整顆↔剖半切換，剖面露出果肉與籽（呼應「紅心芭樂」商品名稱） |
-| 無障礙 | 容器為 `role="button"`、可鍵盤聚焦（`tabIndex`），切開狀態以 `aria-pressed` 表達，另有 `aria-label` 描述用途；提示文案與無障礙標籤走三語字典（[28-i18n.md](28-i18n.md) §5 UI 文字），不是 Translation 表的動態內容 |
-| `prefers-reduced-motion` | 使用者開啟「減少動態效果」時，關閉閒置自轉與切換彈跳動畫，僅保留拖曳旋轉、切開/合起這類使用者直接觸發的操作 |
+| 互動：整顆↔剖半 | 獨立的 `<button aria-pressed>` 觸發（**不再是容器本身兼任這顆按鈕**——這是與舊版最主要的行為差異），剖面露出果肉與籽（呼應「紅心芭樂」商品名稱） |
+| 互動：熱點標註（本輪新增） | **4 個查證過的部位**：整顆總覽／外皮（整顆狀態下可見）、果肉／籽（剖半狀態下可見）——刻意只做這 4 個有查證數字的部位，沒有替「果蒂與葉片」「中心果核腔」等無查證數字的部位杜撰營養事實。每個熱點是掛在對應 3D 錨點（`THREE.Object3D` anchor）、在 `requestAnimationFrame` 迴圈裡手動投影成 2D 螢幕座標的獨立 `<button data-hotspot-button aria-expanded aria-controls aria-label>`，可 Tab 到，點擊或 Enter 展開/收合對應的查證營養事實與資料來源（來源含 USDA FoodData Central、期刊論文，文字列表中附可點連結；展開時同步把下方文字化等價列表對應的項目捲入可視範圍） |
+| 熱點的無障礙細節 | 非目前狀態（整顆/剖半）的熱點直接不 render（React 依 `cut` 狀態決定要掛載哪 2 個熱點），不會讓鍵盤使用者 Tab 到畫面上看不到的按鈕；背面（因拖曳旋轉而朝向鏡頭另一側、正面判定用法向量與視角的內積）的熱點則以 `hidden` + `tabIndex=-1` 隱藏（效能考量，避免每幀觸發 React re-render） |
+| 文字化等價列表 | 頁面同時提供一份**全程展開、全程在 DOM 裡**的 `<dl>`，內容與 3D 熱點共用同一份字典——不需要先跟 3D 互動，就能取得全部 4 個部位的完整營養說明 |
+| WebGL 不可用時的退回 | WebGL 建立失敗，或偵測到低階裝置訊號（`navigator.hardwareConcurrency <= 1`）時，直接退回**靜態 SVG 剖面圖**＋同一份文字列表，配色比照 three.js 材質色票，不嘗試硬撐一個半殘的 3D 版本 |
+| `prefers-reduced-motion` | 關閉閒置自轉與整顆/剖半切換的彈跳動畫；使用者主動觸發的拖曳旋轉、切開/合起、熱點展開不受影響 |
+| 文案與翻譯範圍 | 提示文案、按鈕與熱點的 `aria-label` 走三語字典（[28-i18n.md](28-i18n.md) §5 UI 文字），三語皆完整；**4 個熱點查證過的營養事實/來源內容本身刻意只在 zh-Hant 定義**，en/ja 依既有 fallback 規則沿用同一份中文內容（比照既有「事實類」內容的慣例），屬刻意留待日後另行查證/專業翻譯的範疇，不是本節新增的缺口 |
 
 **與 CMS Service 的關係**：這是首頁模板裡**寫死**的固定視覺效果，不透過 CMS Service 的 `PageSection`/`Config` 機制管理，賣家後台無法關閉或替換它——與同一頁面上其餘走 CMS 管理的內容區塊（Banner／RichText 等）是不同性質的東西，屬於「爸芭樂」這個範例案例本身的品牌呈現，比照白牌客戶各自客製首頁模板的預期（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），不是每個白牌客戶都會有的通用平台功能。首頁其餘文字內容目前仍是佔位文案、尚未實際接上 CMS Service 查詢，這點屬於既有已知缺口（不是本節新增的設計）——完整盤點見 [10-gap-analysis.md](10-gap-analysis.md) §15：`AboutUs`/`Custom` 版型連前台路由都不存在（同一個根本缺口的延伸，不是各自獨立遺漏）、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象、賣家後台的版型編輯器是完整可用的真實功能因此容易讓操作者誤判「發佈後買家端已生效」。
 
