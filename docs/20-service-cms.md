@@ -11,6 +11,7 @@
 | v0.6 | 2026-09-10 | ordinarycas | §5 Page Builder 實作方式待決議項已解決：定案簡化版（既有 PageSection.Type 固定列舉設計即為答案），回應「將待決議事項列出來實作」需求 |
 | v0.7 | 2026-09-10 | ordinarycas | §2 新增 2.1 ERD（Mermaid），並核對 `ecommerce-services` 現行 Domain/Infrastructure 程式碼後補上 PageLayout 的 `(PageType, Status)` 唯一索引說明——每個 PageType 各有一列草稿＋一列已發佈，先前表格未提及這個「草稿/已發佈分列儲存」設計；確認 `PageLayout`—`PageSection` 為資料庫層級強制外鍵（級聯刪除），`Translation.EntityId` 為既有多型設計、未建 FK |
 | v0.8 | 2026-09-10 | ordinarycas | §1、§4 補上「系統預設版型」fallback 的實際實作方式——`ecommerce-services` 稽核發現公開端點先前對從未發佈過內容的 `PageType` 一律回 404，違反本文件 §1 原有的「未自訂時套用系統預設版型」，已修正：改為程式碼內建常數（`SystemDefaultPageLayouts`），不是 seed 一列資料庫資料，理由與內容組成見 §4 新增說明 |
+| v0.9 | 2026-09-12 | ordinarycas | §4 修正版型發佈通知前台重新產生的端點描述——原先假設是前台/Gateway 主動呼叫進本服務的 `POST /internal/v1/cms/revalidate-webhook`，查證 `ecommerce-services` 實作後發現方向相反：本服務發佈成功後主動呼叫前台的 `/api/revalidate`，`internal/v1/cms/revalidate-webhook` 從未被任何呼叫端使用過且已在實作端整個移除（`CmsInternalController`），Gateway 路由表本就不轉發 `internal/v1/*` 前綴；已依實際採用的方向訂正本節端點表格與說明。同時記錄前台目前尚未消費 CMS 版型內容，這個通知機制暫無實際效果，完整盤點見 [10-gap-analysis.md](10-gap-analysis.md) §15 |
 
 ## 1. 職責
 
@@ -78,8 +79,11 @@ erDiagram
 | `GET /api/v1/vendor/cms/page-layouts/{pageType}` | 賣家後台讀取目前草稿內容（含尚未發佈的變更），供編輯器載入目前設定 | 賣家 |
 | `PUT /api/v1/cms/page-layouts/{pageType}` | 更新版型內容（區塊順序、顯示/隱藏、Config） | 賣家 |
 | `POST /api/v1/cms/page-layouts/{pageType}/publish` | 將草稿版型發佈 | 賣家 |
-| `POST /internal/v1/cms/revalidate-webhook` | 版型變更時通知前台 Next.js 觸發 ISR 重新產生 | 內部（Gateway 或 CMS 自己觸發） |
 
+> **版型變更通知前台重新產生，方向是本服務主動對外呼叫，不是本服務對外公開的端點**：發佈成功後，本服務會呼叫 `ecommerce-storefront` 自己的 `POST /api/revalidate` 端點（帶 `{tag: "cms:{pageType 小寫}"}`），觸發 Next.js `revalidateTag` 重新產生對應頁面——這是 CMS 對前台的**單向 HTTP 呼叫**（`IStorefrontRevalidateClient`／`HttpStorefrontRevalidateClient`），不是前台或 Gateway 呼叫進本服務的內部端點。本節先前列出的 `POST /internal/v1/cms/revalidate-webhook` 假設方向相反（前台/Gateway 主動呼叫本服務觸發），查證實作後發現這個假設從未真的落地過——該端點自始至終只是 501 佔位，沒有任何呼叫端使用過，Gateway 的路由表本就排除 `internal/v1/*` 前綴（見 [25-service-gateway.md](25-service-gateway.md)）使其透過對外唯一入口也完全打不到，已在實作端整個移除（`CmsInternalController`），本服務目前**沒有**任何 `internal/v1/...` 開頭的路由，已依實際採用的方向訂正本節，不再列出這個端點。
+>
+> **這個通知機制目前打得通、但暫無實際效果**：`ecommerce-storefront` 目前還沒有任何頁面真的查詢過本服務的版型內容（見 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1、[10-gap-analysis.md](10-gap-analysis.md) §15），前台從未在任何 `fetch` 呼叫上標注過 `cms:*` 這類 tag，`revalidateTag` 因此沒有對應的快取項目可以真正失效。這是前台端尚未實作的缺口，不是本服務通知機制本身的設計錯誤——本服務這端（發佈成功後呼叫前台）已是正確、完整的實作。
+>
 > **系統預設版型 fallback（§1 呼應）**：`GET /api/v1/cms/page-layouts/{pageType}` 對任何合法 `PageType`（`Home`/`AboutUs`/`Custom`）皆不回 404。資料庫沒有對應 `Published` 列時（全新客戶部署、賣家尚未發佈過任何內容），改回傳**程式碼內建**的系統預設內容，`IsDefault` 誠實回報 `true`；404 僅保留給 `pageType` 路徑參數本身不是合法列舉值的情況。一旦賣家透過 `PUT` + `POST .../publish` 真的發佈過內容，對應 `PageType` 就會有真正的 `Published` 列，這個 fallback 便不再介入（`IsDefault` 回報 `false`）。
 >
 > 刻意選擇「程式碼常數」而非「seed 一列 `IsDefault = true` 的 `Published` 資料庫資料」：這個 404 是**正式環境**的缺口（全新部署上線第一天就會遇到，不是開發方便性缺口），需要在任何環境（含正式環境）都保證可用，不能依賴 Migration data seed 或種子資料列是否存在/完整——seed 列可能被刪除、資料庫損毀，或種子步驟尚未執行就已經有真實流量進來，這些都會讓 fallback 本身失效。程式碼常數不依賴資料庫狀態，任何時候都保證能回傳內容。
