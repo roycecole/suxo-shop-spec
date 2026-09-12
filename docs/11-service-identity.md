@@ -13,6 +13,7 @@
 | v0.8 | 2026-09-10 | ordinarycas | §6 LINE/Google OAuth 串接時程標記為需要業主決策（排程/資源分配問題，非技術決策），回應「將待決議事項列出來實作」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | §6 LINE/Google OAuth 串接時程補上排序建議（必要路徑 Email+密碼已完整可用，非阻擋性缺口，建議排在其他業主決策議題之後），仍未代為排定具體時程，回應「繼續補完 9 項未解決」需求 |
 | v0.10 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 User/ExternalLogin/Address/RefreshToken/AccountActionToken 五個實體與其內部 FK 關係；已交叉核對 `ecommerce-services` 實際 EF Core 程式碼（Domain Entities + Infrastructure Configurations），§2 既有文字內容與程式碼一致，未發現需訂正之處 |
+| v0.11 | 2026-09-12 | ordinarycas | §5.1「Refresh Token」段落補上刻意例外：`ecommerce-admin`（賣家後台）從第五輪（2026-09-10）起刻意不採用 Refresh Token，只用短效 Access Token（無靜默換發）——先前只有 `ecommerce-storefront` 的雙 Token＋輪替設計寫進規格，這個關鍵例外從未回頭補上，回應本輪規格同步稽核發現的落後缺口，同步 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) v0.10 |
 
 ## 1. 職責
 
@@ -148,6 +149,8 @@ erDiagram
 **忘記密碼**：`POST /api/v1/identity/forgot-password` 產生 `AccountActionToken`（`Purpose=PasswordReset`，1 小時有效）並寄出重設連結；**無論該 Email 是否存在對應帳號，一律回傳相同的成功訊息**，避免帳號列舉攻擊（呼應 [29-shared-service-conventions.md](29-shared-service-conventions.md) §4 既有的暴力破解/列舉防護原則）。`POST /api/v1/identity/reset-password` 驗證 Token 有效且未使用/未過期後更新 `PasswordHash`，Token 標記為已使用，並**同時撤銷該使用者所有現有 Refresh Token**（密碼重設後強制所有裝置重新登入，屬安全常規）。
 
 **Refresh Token（解決既有待決議事項）**：`login` 同時核發 Access Token（短效，如 30 分鐘）與 Refresh Token（長效，如 30 天，`RefreshToken.TokenHash` 僅存雜湊不存明文）。`POST /api/v1/identity/refresh-token` 換發新 Access Token 時採**輪替（Rotation）**：每次使用後舊 Refresh Token 立即失效、核發新的一組，降低 Token 遭竊後被長期濫用的風險。前台儲存位置：Access Token 存於記憶體，Refresh Token 以 httpOnly、Secure（正式環境）、SameSite=Lax Cookie 存放（避免 XSS 情境下被 JS 讀取），透過 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5 既有的 Route Handler 代理模式轉發，不直接暴露給前端 JS——`ecommerce-storefront` 已依此實作（`app/api/auth/*` BFF 路由＋`lib/auth-cookie.ts`），不再只是建議，見該 repo 自己的 README「會員登入」一節。
+
+**刻意例外：`ecommerce-admin` 不使用 Refresh Token（v0.11 補上規格）**：上述雙 Token＋輪替設計是本節原本唯一描述的機制，但**賣家後台 `ecommerce-admin` 從第五輪（2026-09-10）起刻意不這樣實作**——Access Token 存 `localStorage`，**完全不核發/不儲存 Refresh Token**，Access Token（30 分鐘）過期後單純要求使用者重新登入，沒有靜默換發。理由（比照 `shyecms-admin` 既有的同款取捨，見 `ecommerce-admin` 自己的 `src/auth/session.ts` 開頭註解）：`ecommerce-storefront` 是 Next.js，能用 Route Handler 當 BFF 把 Refresh Token 轉存 httpOnly Cookie，瀏覽器 JS 全程碰不到明文；`ecommerce-admin` 是純 Vite SPA，build 產物是靜態檔案由 nginx 服務（見 [26-project-structure.md](26-project-structure.md) §3.3），**沒有自己的伺服器端程式碼可以扮演這個 BFF 角色**，做不到同一套防護。若比照 `ecommerce-storefront`把 30 天效期的 Refresh Token 也存進 `localStorage`，會讓 XSS 情境下的曝險時間從「Access Token 的 30 分鐘」放大成「Refresh Token 的 30 天」，得不償失——改用短效 Access Token 換取不落地長效憑證，兩害相權取其輕。使用者體驗上的取捨：Access Token 過期後任何 `/api/v1/vendor/*` 請求皆回 401，`ecommerce-admin` 前端偵測到「帶了 token 的請求被 401」時會清空 session、導回 `/login` 並提示「登入已逾時，請重新登入」（不是靜默換發後無感延續）。此例外**只影響 `ecommerce-admin` 這一個前端如何使用 `login`/`refresh-token` 兩個端點**，不影響 Identity Service 本身的 API 契約——`POST /api/v1/identity/login` 依然一律同時核發兩種 Token（見 §5 表格），`ecommerce-admin` 只是拿到 Refresh Token 後直接捨棄不存、也永遠不呼叫 `refresh-token` 端點，端點本身不需要為此新增任何分支。詳細的賣家後台需求脈絡見 [08-vendor-admin-requirements.md](08-vendor-admin-requirements.md) §3.1。
 
 **殘留缺口（誠實記錄）**：驗證信/重設密碼信的**實際寄送管道**依賴 Email 發送能力，但這是 [23-service-notification.md](23-service-notification.md) 既有待決議「Email/簡訊是否併入本服務」尚未定案的部分（見 [30-open-decisions-register.md](30-open-decisions-register.md) §4）——本節只設計到「產生 Token、提供驗證/重設端點」，實際寄信管道選型不在本次範圍內，該項待決議定案前，這兩個信件動作在實作上會缺一塊。
 

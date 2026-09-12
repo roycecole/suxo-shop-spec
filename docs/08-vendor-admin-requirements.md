@@ -12,6 +12,7 @@
 | v0.7 | 2026-09-10 | ordinarycas | §6 稅務欄位待決議項已解決：定案不新增，維持匯出固定值，回應「將待決議事項列出來實作」需求 |
 | v0.8 | 2026-09-10 | ordinarycas | §5.3 訂正 Grouped 商品匯出分隔符號錯誤（逗號→`|`，查證 WooCommerce 官方格式後發現）；§6 解決其餘 5 項待決議：PlatformSupportStaff 診斷端點盤點（順手補上 Promotions/Notification 兩個遺漏端點）、即時通知定案不需要、會員資訊遮罩顯示定案、匯出連結時效定案 30 分鐘，回應「將待決議事項列出來實作」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | 新增 §4.6：§6 盤點出的 5 個服務／6 個診斷端點先前在 `ecommerce-services` 完全不可達（誤掛服務身分 JWT 專用的 `InternalAny` Policy，Gateway 路由表也整個排除 `/internal/v1/*`），本輪真正修正——補上 `PlatformSupportStaffOnly` Policy、Gateway 新增對應具名路由（[25-service-gateway.md](25-service-gateway.md) §4.2）、落實 §4.4 稽核要求的結構化 log 欄位；已用真實簽發的使用者 JWT 經 Gateway 實測驗證。回應「查核 §6 盤點出的端點是否真的能被呼叫到」的發現 |
+| v0.10 | 2026-09-12 | ordinarycas | §3 新增 §3.1：`ecommerce-admin` 從第五輪起刻意不使用 Refresh Token（只用 30 分鐘 Access Token、無靜默換發），與 [11-service-identity.md](11-service-identity.md) §5.1 原本描述的雙 Token＋輪替設計不一致，這個刻意例外先前從未寫回規格，回應本輪規格同步稽核發現的落後缺口，同步 [11-service-identity.md](11-service-identity.md) v0.11 |
 
 > 針對「爸芭樂」微服務平台的賣家角色具體化，並新增拾夜科技支援權限章節（第 4 節）。不含客戶自己的「平台管理員」規格（賣家審核、全站金流物流設定、客訴仲裁）——爸芭樂案例暫定為單一賣家自營，見 [05-scope-and-open-items.md](05-scope-and-open-items.md) §2。
 
@@ -55,6 +56,12 @@
 ## 3. 賣家角色與子帳號
 
 沿用 `VendorStaff` 設計（子帳號權限，如僅出貨、僅看報表），本輪不重新設計，只確認此設計掛在 **Vendor Service** 底下。
+
+### 3.1 登入與 Session 管理：刻意不使用 Refresh Token（現況記錄）
+
+賣家後台（`ecommerce-admin`，Vite SPA，見 [26-project-structure.md](26-project-structure.md) §3.3）的登入機制沿用 Identity Service 的 `login` 端點（[11-service-identity.md](11-service-identity.md) §5.1），但**刻意不使用該端點同時核發的 Refresh Token**：Access Token 存 `localStorage`，30 分鐘過期後單純要求重新登入，沒有靜默換發。
+
+這與 `ecommerce-storefront`（前台）的作法不同——前台是 Next.js，能用 Route Handler 當 BFF 把 Refresh Token 轉存 httpOnly Cookie；賣家後台是純 Vite SPA，build 產物是靜態檔案由 nginx 服務，**沒有自己的伺服器端程式碼能扮演同樣的 BFF 角色**。若把 30 天效期的 Refresh Token 也存進 `localStorage`，XSS 情境下的曝險時間會從「Access Token 的 30 分鐘」放大成「Refresh Token 的 30 天」——比照 `shyecms-admin` 既有的同款取捨，改用短效 Access Token 換取不落地長效憑證。Access Token 過期後，`ecommerce-admin` 會清空 session、導回 `/login` 並提示「登入已逾時，請重新登入」，不是無感的靜默延續。完整設計理由見 [11-service-identity.md](11-service-identity.md) §5.1「刻意例外」段落；Identity Service 的 `login`/`refresh-token` 端點本身契約不受影響，只是 `ecommerce-admin` 這個前端選擇不使用後者。
 
 ## 4. 拾夜科技資訊人員的支援權限（新增）
 
