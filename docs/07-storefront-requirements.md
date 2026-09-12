@@ -13,6 +13,7 @@
 | v0.8 | 2026-09-09 | ordinarycas | §3 首頁列新增 §3.1 交叉引用；新增 §3.1 記錄 `ecommerce-storefront` 已實作的首頁互動 3D 芭樂效果（原本只活在程式碼與元件註解裡），回應「把已經做出來但規格沒寫的東西補回文件」需求 |
 | v0.9 | 2026-09-10 | ordinarycas | §5 LINE/Google OAuth 串接時程標記為需要業主決策，回應「將待決議事項列出來實作」需求 |
 | v0.10 | 2026-09-10 | ordinarycas | §5 訪客結帳防詐機制待決議項已解決：現階段不強制簡訊驗證，採分層防詐（速率限制+Email 驗證），回應「將待決議事項列出來實作」需求 |
+| v0.11 | 2026-09-12 | ordinarycas | §3.1 補上「首頁尚未接上 CMS Service」缺口的具體交叉引用——先前只在本節提到「屬於既有已知缺口」但沒有指向任何集中追蹤處，[10-gap-analysis.md](10-gap-analysis.md) 新增 §15 集中盤點這個缺口與相關斷點（`AboutUs`/`Custom` 版型連前台路由都不存在、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象），回應「集中追蹤首頁 CMS 串接斷開處」需求 |
 
 > 本文件是 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md) §5、§8 的細節展開，針對「爸芭樂」微服務平台具體化。前身規格曾有更完整的前台需求（搜尋篩選、商品評價、收藏追蹤等），已隨舊版規格一併移除，見 [00-overview.md](00-overview.md) §8。
 
@@ -66,7 +67,7 @@
 | 無障礙 | 容器為 `role="button"`、可鍵盤聚焦（`tabIndex`），切開狀態以 `aria-pressed` 表達，另有 `aria-label` 描述用途；提示文案與無障礙標籤走三語字典（[28-i18n.md](28-i18n.md) §5 UI 文字），不是 Translation 表的動態內容 |
 | `prefers-reduced-motion` | 使用者開啟「減少動態效果」時，關閉閒置自轉與切換彈跳動畫，僅保留拖曳旋轉、切開/合起這類使用者直接觸發的操作 |
 
-**與 CMS Service 的關係**：這是首頁模板裡**寫死**的固定視覺效果，不透過 CMS Service 的 `PageSection`/`Config` 機制管理，賣家後台無法關閉或替換它——與同一頁面上其餘走 CMS 管理的內容區塊（Banner／RichText 等）是不同性質的東西，屬於「爸芭樂」這個範例案例本身的品牌呈現，比照白牌客戶各自客製首頁模板的預期（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），不是每個白牌客戶都會有的通用平台功能。首頁其餘文字內容目前仍是佔位文案、尚未實際接上 CMS Service 查詢，這點屬於既有已知缺口，不是本節新增的設計。
+**與 CMS Service 的關係**：這是首頁模板裡**寫死**的固定視覺效果，不透過 CMS Service 的 `PageSection`/`Config` 機制管理，賣家後台無法關閉或替換它——與同一頁面上其餘走 CMS 管理的內容區塊（Banner／RichText 等）是不同性質的東西，屬於「爸芭樂」這個範例案例本身的品牌呈現，比照白牌客戶各自客製首頁模板的預期（見 [06-ecommerce-platform-architecture.md](06-ecommerce-platform-architecture.md)），不是每個白牌客戶都會有的通用平台功能。首頁其餘文字內容目前仍是佔位文案、尚未實際接上 CMS Service 查詢，這點屬於既有已知缺口（不是本節新增的設計）——完整盤點見 [10-gap-analysis.md](10-gap-analysis.md) §15：`AboutUs`/`Custom` 版型連前台路由都不存在（同一個根本缺口的延伸，不是各自獨立遺漏）、CMS 發佈後通知前台重新產生的機制實際上沒有可失效的快取對象、賣家後台的版型編輯器是完整可用的真實功能因此容易讓操作者誤判「發佈後買家端已生效」。
 
 ## 4. 商品詳情頁的現貨顯示
 
