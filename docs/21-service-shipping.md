@@ -9,6 +9,7 @@
 | v0.4 | 2026-09-10 | ordinarycas | §5 解決 2 項待決議：溫控物流視為一般宅配子選項（新增 RequiresColdChain 欄位）、超商取貨門市選擇標記為需要外部資源（電子地圖 API 官方合作），回應「將待決議事項列出來實作」需求 |
 | v0.5 | 2026-09-10 | ordinarycas | §5 超商取貨門市選擇項目補上取得官方合作資格後的執行清單（4 個步驟，含資料模型擴充提醒），回應「繼續補完 9 項未解決」需求 |
 | v0.6 | 2026-09-10 | ordinarycas | §2 新增 2.1 ER 圖（Mermaid erDiagram），並依 `ecommerce-services/services/shipping` 實作程式碼修正資料模型表格：`ShippingZone` 補上 `VendorId`／`RegionCodes`、`ShippingMethod` 補上 §5 已解決事項新增但先前未同步列出的 `RequiresColdChain` 與 `IsActive` 欄位 |
+| v0.7 | 2026-09-12 | ordinarycas | §4 新增內部端點 `GET /internal/v1/shipping/methods/{id}/quote`（資安修正：Order Service 結帳 Saga 原本直接信任買家結帳請求本文的 `ShippingFee`，任何人都能竄改該欄位送出任意運費，本端點依 `ShippingMethodId` 回傳權威運費供核對；本服務第一個 `internal/v1/*` 端點，掛 `InternalOrderOnly` Policy），見 [17-service-order.md](17-service-order.md) v0.20 §4 新增的步驟 1.55 |
 
 ## 1. 職責
 
@@ -75,6 +76,9 @@ erDiagram
 | `POST /api/v1/vendor/shipping/zones/{zoneId}/methods` | 於指定區域新增物流方式（宅配/超商取貨）與 `RateRule` | 賣家 |
 | `PUT /api/v1/vendor/shipping/methods/{id}` | 編輯物流方式的運費規則 | 賣家 |
 | `DELETE /api/v1/vendor/shipping/methods/{id}` | 刪除物流方式 | 賣家 |
+| `GET /internal/v1/shipping/methods/{id}/quote` | 依 `ShippingMethodId` + `orderAmount`（伺服器權威小計）+ `itemCount` 用既有 `RateRuleCalculator` 算出權威運費，供 Order Service 結帳 Saga 核對買家送來的 `ShippingFee`（v0.7 新增，見下方說明） | 內部（僅限 order-service） |
+
+**`GET /internal/v1/shipping/methods/{id}/quote` 的設計理由（v0.7 資安修正新增）**：Order Service 結帳 Saga 原本直接信任買家結帳請求本文的 `ShippingFee`，完全沒有伺服器端驗證，任何人都能竄改該欄位送出任意（含 0 或負值）運費——與 [12-service-catalog.md](12-service-catalog.md) 的 `products/batch`（核對 Price/VendorId）同一類缺口。既有的 `GET /api/v1/shipping/methods` 是公開端點（未受服務身分 JWT 保護），與本平台「Order 呼叫其他服務一律走 `internal/v1/*` + 服務身分 JWT」的既有慣例（Catalog `products/batch`、Vendor `commission-rates/batch`）不符，故新增這個內部端點而非直接呼叫既有公開端點——本服務先前完全沒有任何 `internal/v1/*` 端點，這是第一個，掛 `InternalOrderOnly` Policy（僅信任 Order Service 的服務身分 JWT）。查無此 `ShippingMethodId`，或該物流方式已被賣家停用（`IsActive=false`），回 404，由 Order Service 轉譯為 `reason=shipping_method_not_found`；運費計算完全沿用既有 `RateRuleCalculator`，不另立一套規則。完整的呼叫時機、比對邏輯與拒絕條件見 [17-service-order.md](17-service-order.md) §4 步驟 1.55。**已知相鄰缺口**：本端點不驗證這個 `ShippingMethodId` 是否歸屬結帳品項所屬的賣家（Order 沒有地址/地區欄位可供反推），見該文件 §6 對應待決議項。
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
