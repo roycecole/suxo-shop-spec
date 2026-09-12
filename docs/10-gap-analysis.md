@@ -29,6 +29,7 @@
 | v0.24 | 2026-09-10 | ordinarycas | **訂正 §1「`PlatformSupportStaff` 的跨服務授權模式」一列**：v0.20 標記的「已解決」查證後是**誤判**——當時只確認了 Policy 命名慣例的設計決策，從未真的檢查 5 個診斷端點程式碼；實際重新盤點 `ecommerce-services` 發現全部 5 個端點當時仍掛 `[Authorize(Policy = "InternalAny")]`（服務身分 JWT，服務對服務呼叫專用），真人 `PlatformSupportStaff` 使用者拿自己的使用者 JWT 完全無法通過，且 Gateway 路由表整個排除 `/internal/v1/*`（[29](29-shared-service-conventions.md) §3），即使角色驗證修好，Gateway（唯一對外入口）也沒有任何路徑能把請求轉發過去——功能從骨架階段至今對真人使用者完全不可達，是本文件目前為止唯一一項「記錄為已解決、但實際從未落地」的項目，已在本輪查出並真正修正，見該列更新後的說明 |
 | v0.25 | 2026-09-11 | ordinarycas | **訂正 §8「高權限帳號 2FA、CSP、log 集中收集方案、JWT 快取策略」一列**：其中「log 集中收集方案（Grafana Loki）」先前標記的「已解決」只代表 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 的選型決策，`ecommerce-launch/docker-compose.yml` 從未真的包含 Loki/Promtail/Grafana 三個容器——本輪補上真正的實作（3 個容器預設啟動＋Grafana 預先建好的儀表板）並實測驗證：送出一次帶自訂 Correlation ID 的真實跨服務請求（Gateway → Catalog）後，同一個 Correlation ID 可在 Grafana 儀表板同時查到兩服務的 log，見該列更新後的說明、[29-shared-service-conventions.md](29-shared-service-conventions.md) §5、`ecommerce-launch/README.md`「集中式日誌與監控」一節。同一列的 2FA／CSP／JWT 快取策略三項本質是 policy-only 決議，選型/決策當下即完整解決，不受此次訂正影響 |
 | v0.26 | 2026-09-11 | ordinarycas | 回應「統一 15 服務 Problem Details／列舉序列化慣例」需求，§1 新增一項發現：Catalog/Gateway/Payment/Order/CMS/WMS/Vendor 7 個服務已透過 `SuxoShop.Shared.Conventions` 的 `AddSuxoShopApiConventions()` 統一（見 [09-api-specification.md](09-api-specification.md) §2.1/§2.2），但其餘 Identity/Media/Notification/Shipping/Analytics/Reviews/Promotions 7 個服務的列舉欄位現況與前台依賴情形本輪未查證，記錄為殘留缺口 |
+| v0.27 | 2026-09-12 | ordinarycas | 新增 §15：盤點「首頁/形象頁 CMS 串接斷點」，回應「集中追蹤首頁 CMS 串接斷開處」需求——逐一核對 `ecommerce-services`（CMS Service、Gateway 路由表）、`ecommerce-storefront`（首頁程式碼與既有 TODO 註解）、`ecommerce-admin`（CMS 版型編輯器）後，發現 4 項此前只零星散落在程式碼註解與 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1 一句帶過提及裡、從未集中列出的斷點；同步訂正 [20-service-cms.md](20-service-cms.md) §4（見其 v0.9）與 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1（見其 v0.11）的過時/不完整描述 |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -217,3 +218,16 @@
 | ~~Notification 的「Email/簡訊是否併入本服務」待決議項急迫性提升~~ | **已解決**：定案 Email 併入本服務、簡訊現階段不做，解除 Identity 驗證信的既有卡點，見 [23-service-notification.md](23-service-notification.md) §7 |
 
 **建議**：本節 5 項已全數處理完畢。
+
+## 15. 首頁/形象頁 CMS 串接斷點盤點（第十輪複查，2026-09-12）
+
+「CMS 版型驅動買家看到的首頁/形象頁內容」這個設計（[20-service-cms.md](20-service-cms.md) §1）在 CMS 後端與 `ecommerce-admin`（賣家後台）兩端都已是完整、真實的實作，但買家實際看到的 `ecommerce-storefront` 端完全沒有消費這些資料——這個落差先前只零星散落在程式碼註解（`ecommerce-storefront/app/[locale]/page.tsx` 的 TODO、`ecommerce-services/services/cms/README.md` 的調查記錄）與 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1 的一句帶過提及裡，沒有集中一份清單追蹤，本輪逐一核對三個 repo 的實際程式碼後彙整如下：
+
+| 項目 | 說明 |
+|---|---|
+| 首頁完全未呼叫 CMS Service，內容為寫死的三語字典 | `ecommerce-storefront/app/[locale]/page.tsx`（品牌形象首頁）的 Hero 標題/副標題/導購按鈕、下方特色卡片內容，全部來自 `lib/dictionaries.ts` 的靜態字典，從未呼叫過 [20-service-cms.md](20-service-cms.md) §4 的 `GET /api/v1/cms/page-layouts/{pageType}`；程式碼內有明確 TODO 註解承認「正式版本應改為呼叫 CMS Service 讀取首頁版型內容」。CMS 後端該公開端點本身是完整實作（含系統預設版型 fallback，見 20 §4），純粹是前台這端從未接上 |
+| `AboutUs`/`Custom` 版型連前台路由都不存在，不是專屬缺漏而是同一個根本缺口的延伸 | CMS 後端與 `ecommerce-admin` 對 `Home`/`AboutUs`/`Custom` 三種版型的讀寫/發佈是完全通用一致的處理（`Enum.TryParse<PageType>`，無特殊分支），`ecommerce-admin` 的版型編輯器（`src/features/cms/CmsPage.tsx`）三種型別皆可完整編輯與發佈；但 `ecommerce-storefront` 的 `app/[locale]/` 底下連 `/about` 或任何對應 `Custom` 頁面的路由都找不到——這不是「首頁沒接、AboutUs/Custom 另外還缺」的兩個問題，而是前台完全沒有任何頁面消費過 CMS 版型資料的同一個缺口，Home 只是因為至少有個寫死內容的頁面存在而比較不顯眼 |
+| CMS 發佈後通知前台重新產生的機制，實際上打得通但沒有可失效的對象 | `PublishPageLayoutCommandHandler` 發佈成功後會呼叫 `IStorefrontRevalidateClient`（`HttpStorefrontRevalidateClient`）POST 前台的 `/api/revalidate`，帶 `{tag: "cms:{pageType 小寫}"}`，前台端點確實會執行 `revalidateTag(tag, "max")` 並回 200——但因為上述兩項缺口，`ecommerce-storefront` 全站從未在任何 `fetch` 呼叫上標注過 `cms:*` 這類 tag（逐一 grep 全 repo 確認），這個 `revalidateTag` 呼叫沒有任何快取項目可以真正失效。也就是說賣家在後台按下「發佈」、CMS 回應成功、log 也記錄「已通知前台」，但買家看到的頁面不會有任何變化——這比「前台沒接 CMS」更容易被誤判為「已經打通」，因為發佈流程本身走得通、沒有任何錯誤訊息。[20-service-cms.md](20-service-cms.md) §4 已同步訂正這個端點的方向說明（見其 v0.9） |
+| 賣家後台的 CMS 版型編輯器是完整可用的真實功能，會讓操作者誤以為發佈後買家端會立即看到變化 | `ecommerce-admin/src/features/cms/CmsPage.tsx` 是真正串接 EF Core/PostgreSQL 的完整編輯器（新增/刪除/排序區塊、JSON Config 編輯、RichText 消毒後預覽、儲存草稿、發佈皆為真實 API 呼叫，非佔位或假資料），操作完成會顯示「發佈成功」訊息。但因為上述三項，這段體驗在賣家後台端完全正確、卻對買家實際看到的網站毫無影響——這是本次盤點中風險最高的一項：不是「功能還沒做」的正常缺口，而是**已完成的後台功能會讓賣家或營運人員誤判「已經生效」**，用來介紹/展示產品時尤其容易被誤會成端到端可用 |
+
+**建議**：前三項的根因是同一個（前台從未消費 CMS 資料），第四項是前三項疊加後的體驗風險，修正順序建議：(1) 決定 `ecommerce-storefront` 是否／何時要做一個能處理 [20-service-cms.md](20-service-cms.md) §2 六種固定 `PageSectionType`（`Banner`/`FeaturedCategories`/`ProductBlock`/`VendorSpotlight`/`RichText`/`Custom`）的通用區塊渲染器（Home 都還沒有，不是能為 AboutUs/Custom 局部完成的工作）；(2) 若要做，需要先定案 `AboutUs`/`Custom` 的網址路徑與導覽入口（`Custom` 型別本身規格 §4 也還沒定義用途）——這些是網址設計/資訊架構決策，不是能從既有程式碼或規格反推出唯一正確答案的工程問題，**本輪不代為決定**；(3) 在此之前，建議至少在 `ecommerce-admin` 的 CMS 編輯頁面加上明確提示（如「發佈後買家端尚不會顯示此內容」），降低第四項的誤判風險——這屬於 `ecommerce-admin` repo 自己的 UI 修正，不在本規格庫範圍內，僅在此記錄建議。
