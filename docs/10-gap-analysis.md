@@ -30,6 +30,7 @@
 | v0.25 | 2026-09-11 | ordinarycas | **訂正 §8「高權限帳號 2FA、CSP、log 集中收集方案、JWT 快取策略」一列**：其中「log 集中收集方案（Grafana Loki）」先前標記的「已解決」只代表 [29-shared-service-conventions.md](29-shared-service-conventions.md) §5 的選型決策，`ecommerce-launch/docker-compose.yml` 從未真的包含 Loki/Promtail/Grafana 三個容器——本輪補上真正的實作（3 個容器預設啟動＋Grafana 預先建好的儀表板）並實測驗證：送出一次帶自訂 Correlation ID 的真實跨服務請求（Gateway → Catalog）後，同一個 Correlation ID 可在 Grafana 儀表板同時查到兩服務的 log，見該列更新後的說明、[29-shared-service-conventions.md](29-shared-service-conventions.md) §5、`ecommerce-launch/README.md`「集中式日誌與監控」一節。同一列的 2FA／CSP／JWT 快取策略三項本質是 policy-only 決議，選型/決策當下即完整解決，不受此次訂正影響 |
 | v0.26 | 2026-09-11 | ordinarycas | 回應「統一 15 服務 Problem Details／列舉序列化慣例」需求，§1 新增一項發現：Catalog/Gateway/Payment/Order/CMS/WMS/Vendor 7 個服務已透過 `SuxoShop.Shared.Conventions` 的 `AddSuxoShopApiConventions()` 統一（見 [09-api-specification.md](09-api-specification.md) §2.1/§2.2），但其餘 Identity/Media/Notification/Shipping/Analytics/Reviews/Promotions 7 個服務的列舉欄位現況與前台依賴情形本輪未查證，記錄為殘留缺口 |
 | v0.27 | 2026-09-12 | ordinarycas | 新增 §15：盤點「首頁/形象頁 CMS 串接斷點」，回應「集中追蹤首頁 CMS 串接斷開處」需求——逐一核對 `ecommerce-services`（CMS Service、Gateway 路由表）、`ecommerce-storefront`（首頁程式碼與既有 TODO 註解）、`ecommerce-admin`（CMS 版型編輯器）後，發現 4 項此前只零星散落在程式碼註解與 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1 一句帶過提及裡、從未集中列出的斷點；同步訂正 [20-service-cms.md](20-service-cms.md) §4（見其 v0.9）與 [07-storefront-requirements.md](07-storefront-requirements.md) §3.1（見其 v0.11）的過時/不完整描述 |
+| v0.28 | 2026-09-12 | ordinarycas | §4 新增項目 13，指向新增的 §15，補上具體建議（`ecommerce-admin` CMS 編輯頁先加提示、前台渲染器與網址設計留待業主/產品面決策） |
 
 > 本文件分析 [00-overview.md](00-overview.md)–[30-open-decisions-register.md](30-open-decisions-register.md) 目前規格的缺口，供下一輪規劃排優先序。
 
@@ -85,6 +86,7 @@
 10. ~~效期商品自動化、多倉支援、防詐機制、網域/憑證管理、CI/CD、高權限帳號 2FA~~——**已解決**（見各自對應章節）；僅**本機多 repo 開發流程**仍待排入下一輪，屬於開發流程細節，非規格階段必須解決。
 11. ~~訪客升級為會員的機制與信箱驗證時機~~（見 §14）——**已解決**：[11-service-identity.md](11-service-identity.md) §5.1 定案沿用同一 `User.Id`＋密碼暫存至驗證通過才生效。
 12. ~~§5.1 適用範圍是否涵蓋 Seller/SellerStaff、結帳 Saga 循序圖遺漏 Payment 失敗分支、Notification Email 管道優先度~~（見 §14）——**已解決**：三項皆已定案，見 [11-service-identity.md](11-service-identity.md) §5.1、[17-service-order.md](17-service-order.md) §4、[23-service-notification.md](23-service-notification.md) §7。
+13. **首頁/形象頁前台尚未消費 CMS 版型內容**（見 §15，新）——建議優先在 `ecommerce-admin` 的 CMS 編輯頁面加上「發佈後買家端尚不會顯示此內容」提示，降低賣家/營運人員誤判已生效的風險；前台何時要做通用區塊渲染器、`AboutUs`/`Custom` 網址如何設計，屬於需要業主/產品面決策的範疇，本文件不代為決定。
 
 > 「補齊其餘服務的 API 大綱」已於後續一輪完成（見 [11-service-identity.md](11-service-identity.md)–[25-service-gateway.md](25-service-gateway.md)），故不再列於本節。
 
