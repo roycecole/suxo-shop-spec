@@ -10,6 +10,7 @@
 | v0.5 | 2026-09-10 | ordinarycas | §2 新增 ER 圖（Mermaid erDiagram），涵蓋 Inventory/StockBatch/StockReservation/StockLedger 四個實體；交叉核對 `ecommerce-services` 實際程式碼後發現 §2 表格文字未反映 v0.4 效期排程已解決項新增的 `StockBatch.IsNearExpiry`/`RemainingQuantity` 欄位與 `StockLedgerEntryType.Expired` 異動種類，已補上。四個實體彼此之間確認**沒有**資料庫層級外鍵關係（僅透過 `ProductId`/`VariationId` 慣例對應，且該欄位是對 Catalog Service 的跨服務參照），ER 圖因此不畫任何關聯線 |
 | v0.6 | 2026-09-10 | ordinarycas | §5 新增 `POST /internal/v1/wms/inventory/batch` 批次庫存查詢端點，`ecommerce-services` 本輪修正 Catalog WooCommerce 匯出工作的 N+1 內部呼叫問題（見 [12-service-catalog.md](12-service-catalog.md) §5），取代原本規劃逐商品呼叫既有單筆端點的寫法 |
 | v0.7 | 2026-09-10 | ordinarycas | 配合 [17-service-order.md](17-service-order.md) v0.14 結帳冪等性修正：§2/§2.1 新增 `StockReservation.VariationKey`（`VariationId` 正規化後的去重鍵，避免 PostgreSQL 唯一索引的 NULL 互不相等陷阱）與 `(OrderId, ProductId, VariationKey)` 唯一約束——重複的結帳 Saga 執行（同一個 OrderId）現在在資料庫層直接擋下，不再無條件重複扣庫存；§4 補充原子扣庫存端點現在對同一個 OrderId 是安全可重複呼叫的行為說明。完整設計理由見 [17-service-order.md](17-service-order.md) §4.2 |
+| v0.8 | 2026-09-12 | ordinarycas | §5 新增 `GET /internal/v1/wms/inventory/products/{productId}/has-stock`（正確性修正：Catalog 硬刪除商品前先前完全不查 WMS，商品刪除後 `Inventory`/`StockBatch`/`StockLedger` 會留下孤兒資料，且賣家後台再無入口管理/釋放）——供 Catalog Service 刪除商品前檢查是否仍有庫存，有則拒絕刪除，取代「Catalog 刪除時反過來呼叫 WMS 清除庫存」的替代方案（理由：庫存歸屬在 WMS，由 WMS 自己判斷並拒絕更符合本服務職責邊界），詳見 [12-service-catalog.md](12-service-catalog.md) v0.10 |
 
 ## 1. 職責
 
@@ -96,6 +97,9 @@ erDiagram
 | `PUT /api/v1/wms/products/{productId}/backorder-policy` | 設定 `BackorderPolicy` | 賣家 |
 | `GET /internal/v1/wms/support/stock-ledger/{productId}` | 供 `PlatformSupportStaff` 唯讀查詢庫存異動歷程，用於排查庫存異常 | 內部 + PlatformSupportStaff |
 | `POST /internal/v1/wms/inventory/batch` | 批次查詢多筆商品／規格的庫存狀態（`productIds`/`variationIds`，合計上限 500 筆）。供 Catalog Service 的 WooCommerce 匯出工作使用，取代原本逐商品各別呼叫一次的 N+1 寫法，見 [12-service-catalog.md](12-service-catalog.md) §5 | 內部 |
+| `GET /internal/v1/wms/inventory/products/{productId}/has-stock` | 查詢商品目前是否仍有庫存（判斷標準見下方說明）。供 Catalog Service 硬刪除商品前檢查，避免留下孤兒庫存資料，見 [12-service-catalog.md](12-service-catalog.md) §5、v0.8 異動紀錄 | 內部（僅限 catalog-service） |
+
+**`GET /internal/v1/wms/inventory/products/{productId}/has-stock` 的判斷標準（v0.8 新增）**：判斷依據是「**該商品本身與其全部變體是否有任一筆 `Inventory.StockQuantity > 0`**」，**不是**「有沒有 `Inventory` 資料列」——庫存已歸零的資料列、或 `StockBatch`/`StockLedger` 這類歷史紀錄本身不構成孤兒資料問題（比照 Order Service 的 `OrderItem` 在商品刪除後仍保留 `ProductId` 快照，是正常的歷史紀錄），真正需要擋下 Catalog 刪除的是賣家倉庫裡「還有實體庫存尚未出清」這個業務狀態。查詢涵蓋該商品本身與其全部變體（各自一筆 `Inventory`，共用父商品 `ProductId`）。
 
 版本控管與文件格式沿用 [09-api-specification.md](09-api-specification.md) 的通用規範。
 
